@@ -16,7 +16,9 @@
     "vision": "tsx src/scripts/visionScanner.ts",
     "batch-sites": "tsx src/scripts/runBatchAnalysis.ts",
     "test-single": "tsx src/scripts/testSingleSite.ts",
-    "test-telegram": "tsx src/scripts/testTelegram.ts"
+    "test-telegram": "tsx src/scripts/testTelegram.ts",
+    "test-telegraf": "tsx src/scripts/testTelegraf.ts",
+    "bot": "tsx src/scripts/telegramBot.ts"
   },
   "keywords": [
     "crypto",
