@@ -1,0 +1,50 @@
+{
+  "name": "coin-checker",
+  "version": "1.0.0",
+  "description": "Крипто-проект анализатор с AI и Telegram ботом",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "batch": "tsx src/scripts/runBatch.ts",
+    "scan": "tsx src/scripts/simpleScanner.ts",
+    "vision": "tsx src/scripts/visionScanner.ts",
+    "batch-sites": "tsx src/scripts/runBatchAnalysis.ts",
+    "test-single": "tsx src/scripts/testSingleSite.ts",
+    "test-telegram": "tsx src/scripts/testTelegram.ts"
+  },
+  "keywords": [
+    "crypto",
+    "ai",
+    "telegram",
+    "screenshot",
+    "openai"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.0",
+    "openai": "^4.20.0",
+    "puppeteer": "^24.17.0",
+    "telegraf": "^4.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.55.0",
+    "husky": "^8.0.0",
+    "prettier": "^3.1.0",
+    "tsx": "^4.6.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

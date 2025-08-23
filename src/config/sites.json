@@ -1,0 +1,87 @@
+[
+  {
+    "url": "https://blockdag.network/",
+    "skip": true
+  },
+  {
+    "url": "https://pepeascension.com/",
+    "selector": ".pr-[10%]"
+  },
+  {
+    "url": "https://wallitiq.io/",
+    "skip": true
+  },
+  {
+    "url": "https://littlepepe.com/",
+    "skip": true
+  },
+  {
+    "url": "https://unilabs.finance/",
+    "selector": ".bg-[#00060F7A]",
+    "skip": true
+  },
+  {
+    "url": "https://rcofinance.com/",
+    "skip": true
+  },
+  {
+    "url": "https://www.mutuumfinance.app/",
+    "skip": true
+  },
+  {
+    "url": "https://pinosale.com/",
+    "skip": true
+  },
+  {
+    "url": "https://coldware.io/",
+    "skip": true
+  },
+  {
+    "url": "https://bitcoinhyper.com/",
+    "skip": true
+  },
+  {
+    "url": "https://web3ai.com/",
+    "skip": true
+  },
+  {
+    "url": "https://unstaked.com/",
+    "skip": true
+  },
+  {
+    "url": "https://xyzverse.io/",
+    "skip": true
+  },
+  {
+    "url": "https://snortertoken.com/",
+    "skip": true
+  },
+  {
+    "url": "https://web3bay.io/buy",
+    "skip": true
+  },
+  {
+    "url": "https://fatty.io/",
+    "skip": true
+  },
+  {
+    "url": "https://lightchain.ai/",
+    "skip": true
+  },
+  {
+    "url": "https://dragoin.io/",
+    "skip": true
+  },
+  {
+    "url": "https://presale.ruvi.io/",
+    "skip": true
+  },
+  {
+    "url": "https://remittix.io/",
+    "skip": true
+  },
+  {
+    "url": "https://sponge.vip/en",
+    "skip": true
+  }
+]
