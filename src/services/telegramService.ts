@@ -60,10 +60,15 @@ export class TelegramService {
 
   async stop(): Promise<void> {
     try {
-      await this.bot.stop();
-      logger.info('Telegram bot stopped');
+      // Проверяем, запущен ли бот перед остановкой
+      if (this.bot && typeof this.bot.stop === 'function') {
+        await this.bot.stop();
+        logger.info('Telegram bot stopped');
+      } else {
+        logger.info('Telegram bot was not running');
+      }
     } catch (error) {
-      logger.error('Failed to stop Telegram bot', error as Error);
+      logger.warn('Failed to stop Telegram bot (may not be running)');
     }
   }
 

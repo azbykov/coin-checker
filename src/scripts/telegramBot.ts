@@ -1,5 +1,6 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf } from 'telegraf';
 import { MessageService } from '../services/messageService';
+import { ScreenshotTelegramService } from '../services/screenshotTelegramService';
 import { logger } from '../utils/logger';
 import dotenv from 'dotenv';
 
@@ -8,6 +9,7 @@ dotenv.config();
 class TelegramBot {
   private bot: Telegraf;
   private messageService: MessageService;
+  private screenshotTelegramService: ScreenshotTelegramService;
 
   constructor() {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -18,6 +20,7 @@ class TelegramBot {
 
     this.bot = new Telegraf(botToken);
     this.messageService = new MessageService(this.bot, botToken);
+    this.screenshotTelegramService = new ScreenshotTelegramService(this.bot, botToken);
     
     this.setupHandlers();
   }
@@ -35,11 +38,15 @@ class TelegramBot {
 /help - Показать справку
 /status - Проверить статус бота
 /scan <url> - Просканировать сайт
+/screenshot <url> [selector] - Создать скриншот
 /batch - Запустить пакетный анализ
 /info - Информация о боте
+/stop - Остановить бота (админ)
 
 💡 <b>Примеры использования:</b>
 • /scan https://example.com
+• /screenshot https://example.com
+• /screenshot https://example.com .price
 • /batch
 
 🔧 <b>Поддержка:</b>
@@ -56,6 +63,8 @@ class TelegramBot {
 
 🔍 <b>Анализ сайтов:</b>
 /scan <url> - Проанализировать один сайт
+/screenshot <url> [selector] - Создать скриншот сайта или элемента
+/multi <url> <selector1> <selector2> ... - Создать скриншоты нескольких элементов
 /batch - Запустить анализ всех сайтов из списка
 
 📊 <b>Информация:</b>
@@ -68,6 +77,9 @@ class TelegramBot {
 
 💡 <b>Примеры:</b>
 • /scan https://pepeascension.com
+• /screenshot https://example.com
+• /screenshot https://example.com .price
+• /multi https://example.com .header .content .footer
 • /batch
 • /status
       `;
@@ -130,6 +142,30 @@ class TelegramBot {
       }
     });
 
+    // Обработчик команды /stop (только для администраторов)
+    this.bot.command('stop', async (ctx) => {
+      // Проверяем, является ли пользователь администратором
+      const adminChatId = process.env.TELEGRAM_CHAT_ID;
+      if (ctx.chat.id.toString() !== adminChatId) {
+        ctx.reply('❌ У вас нет прав для выполнения этой команды');
+        return;
+      }
+
+      try {
+        await ctx.reply('🛑 Останавливаю бота...', { parse_mode: 'HTML' });
+        logger.info(`Бот остановлен администратором: ${ctx.chat.id}`);
+        
+        // Останавливаем бота
+        await this.stop();
+        
+        // Завершаем процесс
+        process.exit(0);
+      } catch (error) {
+        logger.error('Ошибка при остановке бота:', error as Error);
+        ctx.reply('❌ Ошибка при остановке бота');
+      }
+    });
+
     // Обработчик команды /scan
     this.bot.command('scan', async (ctx) => {
       const url = ctx.message.text.split(' ')[1];
@@ -143,33 +179,151 @@ class TelegramBot {
         // Отправляем сообщение о начале сканирования
         const scanMessage = await ctx.reply('🔍 Начинаю сканирование...', { parse_mode: 'HTML' });
         
-        // Здесь можно добавить логику сканирования
-        // Пока что просто имитируем процесс
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Создаем скриншот и отправляем в Telegram
+        const result = await this.screenshotTelegramService.processScreenshot(
+          url,
+          {
+            saveToDisk: true,
+            savePath: './screenshots',
+            sendToTelegram: true,
+            chatId: ctx.chat.id.toString(),
+            caption: `Скриншот сайта ${url}`,
+            format: 'png'
+          }
+        );
         
-        // Обновляем сообщение с результатом
-        const resultMessage = `
+        if (result.success) {
+          // Обновляем сообщение с результатом
+          const resultMessage = `
 ✅ <b>Сканирование завершено</b>
 
 🌐 <b>URL:</b> ${url}
 ⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
 📊 <b>Статус:</b> Успешно
+⏱ <b>Время обработки:</b> ${result.processingTime}ms
 
 💡 <b>Результат:</b>
-Сайт просканирован (тестовый режим)
-        `;
-        
-        ctx.telegram.editMessageText(
-          ctx.chat.id,
-          scanMessage.message_id,
-          undefined,
-          resultMessage,
-          { parse_mode: 'HTML' }
-        );
+• Скриншот создан и отправлен
+• Файл сохранен на сервере
+${result.savedPath ? `• Путь: ${result.savedPath}` : ''}
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            resultMessage,
+            { parse_mode: 'HTML' }
+          );
+        } else {
+          // Обновляем сообщение с ошибкой
+          const errorMessage = `
+❌ <b>Ошибка сканирования</b>
+
+🌐 <b>URL:</b> ${url}
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+📊 <b>Статус:</b> Ошибка
+
+💡 <b>Ошибка:</b> ${result.error}
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            errorMessage,
+            { parse_mode: 'HTML' }
+          );
+        }
         
       } catch (error) {
         ctx.reply('❌ Ошибка при сканировании сайта');
         logger.error('Ошибка в команде scan:', error as Error);
+      }
+    });
+
+    // Обработчик команды /multi для множественных селекторов
+    this.bot.command('multi', async (ctx) => {
+      const args = ctx.message.text.split(' ');
+      const url = args[1];
+      const selectors = args.slice(2);
+      
+      if (!url) {
+        ctx.reply('❌ Пожалуйста, укажите URL для скриншота\n\nПримеры:\n/multi https://example.com .selector1 .selector2\n/multi https://example.com #header .content');
+        return;
+      }
+
+      if (selectors.length === 0) {
+        ctx.reply('❌ Пожалуйста, укажите хотя бы один селектор\n\nПримеры:\n/multi https://example.com .selector1 .selector2\n/multi https://example.com #header .content');
+        return;
+      }
+
+      try {
+        const scanMessage = await ctx.reply(`📸 Создаю скриншоты для ${selectors.length} элементов...`, { parse_mode: 'HTML' });
+        
+        const result = await this.screenshotTelegramService.processMultipleScreenshots(
+          url,
+          {
+            saveToDisk: true,
+            savePath: './screenshots',
+            sendToTelegram: true,
+            chatId: ctx.chat.id.toString(),
+            caption: `Множественные скриншоты с сайта ${url}`,
+            selectors: selectors,
+            format: 'png'
+          }
+        );
+        
+        if (result.success) {
+          const successCount = result.screenshots.filter(s => !s.error).length;
+          const errorCount = result.screenshots.filter(s => s.error).length;
+          
+          const resultMessage = `
+✅ <b>Множественные скриншоты созданы</b>
+
+🌐 <b>URL:</b> ${url}
+📊 <b>Статистика:</b>
+• Всего селекторов: ${selectors.length}
+• Успешно: ${successCount}
+• Ошибок: ${errorCount}
+⏱ <b>Время обработки:</b> ${result.processingTime}ms
+
+${errorCount > 0 ? `❌ <b>Ошибки:</b>\n${result.screenshots.filter(s => s.error).map(s => `• ${s.selector}: ${s.error}`).join('\n')}\n` : ''}
+✅ <b>Успешно обработанные селекторы:</b>
+${result.screenshots.filter(s => !s.error).map(s => `• ${s.selector}`).join('\n')}
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            resultMessage,
+            { parse_mode: 'HTML' }
+          );
+        } else {
+          const errorMessage = `
+❌ <b>Ошибка создания множественных скриншотов</b>
+
+🌐 <b>URL:</b> ${url}
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+📊 <b>Статус:</b> Ошибка
+
+💡 <b>Детали:</b>
+${result.screenshots.map(s => `• ${s.selector}: ${s.error || 'Успешно'}`).join('\n')}
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            errorMessage,
+            { parse_mode: 'HTML' }
+          );
+        }
+        
+      } catch (error) {
+        ctx.reply('❌ Ошибка при создании множественных скриншотов');
+        logger.error('Ошибка в команде multi:', error as Error);
       }
     });
 
@@ -178,23 +332,55 @@ class TelegramBot {
       try {
         const batchMessage = await ctx.reply('🔄 Запускаю пакетный анализ...', { parse_mode: 'HTML' });
         
-        // Здесь можно добавить логику пакетного анализа
-        // Пока что просто имитируем процесс
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Список сайтов для анализа (можно загружать из файла)
+        const sites = [
+          'https://pepeascension.com',
+          'https://google.com',
+          'https://github.com'
+        ];
+        
+        // Обновляем сообщение о прогрессе
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          batchMessage.message_id,
+          undefined,
+          `🔄 <b>Пакетный анализ запущен</b>\n\n📋 <b>Сайтов для обработки:</b> ${sites.length}\n⏰ <b>Начато:</b> ${new Date().toLocaleString('ru-RU')}`,
+          { parse_mode: 'HTML' }
+        );
+        
+        // Выполняем пакетную обработку
+        const results = await this.screenshotTelegramService.processScreenshots(
+          sites,
+          {
+            saveToDisk: true,
+            savePath: './screenshots',
+            sendToTelegram: false, // Не отправляем каждый скриншот отдельно
+            format: 'png'
+          }
+        );
+        
+        // Отправляем общий отчет
+        await this.screenshotTelegramService.sendBatchReport(results, ctx.chat.id.toString());
+        
+        // Обновляем сообщение с результатами
+        const successful = results.filter(r => r.success).length;
+        const failed = results.length - successful;
+        const totalTime = results.reduce((sum, r) => sum + r.processingTime, 0);
         
         const resultMessage = `
 📊 <b>Пакетный анализ завершен</b>
 
 📈 <b>Результаты:</b>
-• Обработано сайтов: 5
-• Успешно: 4
-• Ошибок: 1
-• Время: 3.2 сек
+• Обработано сайтов: ${results.length}
+• Успешно: ${successful}
+• Ошибок: ${failed}
+• Общее время: ${totalTime}ms
+• Среднее время: ${Math.round(totalTime / results.length)}ms
 
 ⏰ <b>Завершено:</b> ${new Date().toLocaleString('ru-RU')}
 
 📋 <b>Детальный отчет:</b>
-Отчет будет отправлен отдельным сообщением
+Отправлен отдельным сообщением
         `;
         
         ctx.telegram.editMessageText(
@@ -208,6 +394,79 @@ class TelegramBot {
       } catch (error) {
         ctx.reply('❌ Ошибка при запуске пакетного анализа');
         logger.error('Ошибка в команде batch:', error as Error);
+      }
+    });
+
+    // Обработчик команды /screenshot
+    this.bot.command('screenshot', async (ctx) => {
+      const args = ctx.message.text.split(' ');
+      const url = args[1];
+      const selector = args[2];
+      
+      if (!url) {
+        ctx.reply('❌ Пожалуйста, укажите URL для скриншота\n\nПримеры:\n/screenshot https://example.com\n/screenshot https://example.com .selector');
+        return;
+      }
+
+      try {
+        const scanMessage = await ctx.reply('📸 Создаю скриншот...', { parse_mode: 'HTML' });
+        
+        const result = await this.screenshotTelegramService.processScreenshot(
+          url,
+          {
+            saveToDisk: true,
+            savePath: './screenshots',
+            sendToTelegram: true,
+            chatId: ctx.chat.id.toString(),
+            caption: selector ? `Скриншот элемента "${selector}" с сайта ${url}` : `Скриншот сайта ${url}`,
+            selector: selector,
+            format: 'png'
+          }
+        );
+        
+        if (result.success) {
+          const resultMessage = `
+✅ <b>Скриншот создан</b>
+
+🌐 <b>URL:</b> ${url}
+${selector ? `🎯 <b>Селектор:</b> ${selector}\n` : ''}
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+⏱ <b>Время обработки:</b> ${result.processingTime}ms
+
+💡 <b>Результат:</b>
+• Скриншот отправлен в чат
+• Файл сохранен на сервере
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            resultMessage,
+            { parse_mode: 'HTML' }
+          );
+        } else {
+          const errorMessage = `
+❌ <b>Ошибка создания скриншота</b>
+
+🌐 <b>URL:</b> ${url}
+⏰ <b>Время:</b> ${new Date().toLocaleString('ru-RU')}
+
+💡 <b>Ошибка:</b> ${result.error}
+          `;
+          
+          ctx.telegram.editMessageText(
+            ctx.chat.id,
+            scanMessage.message_id,
+            undefined,
+            errorMessage,
+            { parse_mode: 'HTML' }
+          );
+        }
+        
+      } catch (error) {
+        ctx.reply('❌ Ошибка при создании скриншота');
+        logger.error('Ошибка в команде screenshot:', error as Error);
       }
     });
 
@@ -263,10 +522,11 @@ class TelegramBot {
 
   async stop() {
     try {
+      logger.info('🛑 Останавливаем Telegram бота...');
       await this.bot.stop();
-      logger.info('🛑 Telegram бот остановлен');
+      logger.info('✅ Telegram бот успешно остановлен');
     } catch (error) {
-      logger.error('Ошибка при остановке бота:', error as Error);
+      logger.error('❌ Ошибка при остановке бота:', error as Error);
     }
   }
 }
@@ -284,13 +544,30 @@ if (require.main === module) {
   });
 
   // Обработка сигналов для корректного завершения
-  process.once('SIGINT', () => {
+  process.once('SIGINT', async () => {
     logger.info('Получен сигнал SIGINT, останавливаем бота...');
-    bot.stop();
+    await bot.stop();
+    process.exit(0);
   });
 
-  process.once('SIGTERM', () => {
+  process.once('SIGTERM', async () => {
     logger.info('Получен сигнал SIGTERM, останавливаем бота...');
-    bot.stop();
+    await bot.stop();
+    process.exit(0);
+  });
+
+  // Обработка необработанных ошибок
+  process.on('uncaughtException', (error) => {
+    logger.error('Необработанная ошибка:', error);
+    bot.stop().finally(() => {
+      process.exit(1);
+    });
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error('Необработанное отклонение промиса:', reason);
+    bot.stop().finally(() => {
+      process.exit(1);
+    });
   });
 }

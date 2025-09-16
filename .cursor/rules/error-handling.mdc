@@ -1,0 +1,98 @@
+---
+alwaysApply: true
+---
+
+# Обработка ошибок в Crypto Checker
+
+## Централизованное логирование
+
+Используйте [logger.ts](mdc:src/utils/logger.ts) для всех операций логирования:
+
+```typescript
+import { logger } from '../utils/logger';
+
+// Разные уровни логирования
+logger.debug('Детальная отладочная информация');
+logger.info('Общая информация о работе');
+logger.warn('Предупреждение о потенциальной проблеме');
+logger.error('Ошибка с деталями', error as Error);
+```
+
+## Обработка ошибок в сервисах
+
+Каждый сервис должен обрабатывать ошибки на своём уровне:
+
+```typescript
+async function processData(): Promise<Result | null> {
+  try {
+    // основная логика
+    return result;
+  } catch (error) {
+    logger.error('Failed to process data', error as Error);
+    return null; // или throw в зависимости от контекста
+  }
+}
+```
+
+## Graceful shutdown
+
+Используйте [signalHandler.ts](mdc:src/utils/signalHandler.ts) для корректного завершения:
+
+- Обработка SIGINT и SIGTERM
+- Очистка ресурсов браузера
+- Завершение активных операций
+- Сохранение промежуточных результатов
+
+## Типы ошибок
+
+Определите специфичные типы ошибок:
+
+```typescript
+class ScreenshotError extends Error {
+  constructor(url: string, reason: string) {
+    super(`Failed to screenshot ${url}: ${reason}`);
+    this.name = 'ScreenshotError';
+  }
+}
+
+class VisionApiError extends Error {
+  constructor(reason: string) {
+    super(`Vision API error: ${reason}`);
+    this.name = 'VisionApiError';
+  }
+}
+```
+
+## Обработка в main.ts
+
+Главный файл должен обрабатывать критические ошибки:
+
+```typescript
+async function main(): Promise<void> {
+  try {
+    // основная логика
+  } catch (error) {
+    logger.error('Application failed', error as Error);
+    
+    // Попытка отправить ошибку в Telegram
+    try {
+      await sendErrorToTelegram(error);
+    } catch (telegramError) {
+      logger.error('Failed to send error to Telegram', telegramError as Error);
+    }
+    
+    process.exit(1);
+  } finally {
+    // Очистка ресурсов
+    await cleanup();
+  }
+}
+```
+
+## Принципы
+
+1. **Логируйте все ошибки** - используйте структурированное логирование
+2. **Не глотайте ошибки** - либо обрабатывайте, либо пробрасывайте дальше
+3. **Предоставляйте контекст** - включайте URL, параметры, детали ошибки
+4. **Graceful degradation** - приложение должно продолжать работать при частичных сбоях
+5. **Уведомления** - критичные ошибки должны отправляться в Telegram

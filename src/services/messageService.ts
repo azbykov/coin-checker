@@ -4,7 +4,7 @@
 // Выход: Результат отправки
 // Ошибки: Ошибки сети, неверный chat ID
 
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf } from 'telegraf';
 import { TelegramMessage } from '../types';
 import { logger } from '../utils/logger';
 import { ApiError } from '../utils/errorHandler';

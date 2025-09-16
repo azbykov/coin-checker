@@ -1,0 +1,51 @@
+---
+alwaysApply: true
+---
+
+# Структура проекта Crypto Checker
+
+Это TypeScript проект для анализа крипто-проектов с использованием AI и Telegram бота.
+
+## Основные компоненты
+
+- **Точка входа**: [main.ts](mdc:src/main.ts) - главный файл приложения
+- **Конфигурация**: [config.ts](mdc:src/config/config.ts) - настройки приложения
+- **Типы**: [index.ts](mdc:src/types/index.ts) - TypeScript интерфейсы и типы
+
+## Сервисы (src/services/)
+
+- **browserService.ts** - управление браузером Puppeteer
+- **screenshotService.ts** - создание скриншотов веб-страниц
+- **screenshotTelegramService.ts** - интегрированный сервис скриншотов и Telegram
+- **openaiService.ts** - клиент для OpenAI API
+- **visionParser.ts** - парсинг изображений через AI
+- **telegramService.ts** - основной сервис Telegram бота
+- **messageService.ts** - отправка сообщений в Telegram
+- **orchestrator.ts** - основной оркестратор приложения
+- **urlProcessor.ts** - обработка и валидация URL
+- **reportService.ts** - создание и форматирование отчётов
+- **storageService.ts** - сохранение данных
+
+## Утилиты (src/utils/)
+
+- **logger.ts** - структурированное логирование
+- **errorHandler.ts** - обработка ошибок
+- **urlValidator.ts** - валидация URL
+- **reportFormatter.ts** - форматирование отчётов
+- **dataValidator.ts** - валидация данных
+- **signalHandler.ts** - обработка сигналов
+
+## Скрипты (src/scripts/)
+
+- **telegramBot.ts** - Telegram бот с командами
+- **batchSiteAnalyzer.ts** - пакетный анализ сайтов
+- **visionScanner.ts** - сканер с Vision API
+- **simpleScanner.ts** - простой сканер
+- **runBatchAnalysis.ts** - запуск пакетного анализа
+
+## Конфигурация
+
+- **package.json** - зависимости и скрипты
+- **tsconfig.json** - настройки TypeScript (строгий режим)
+- **sites.json** - список сайтов для анализа
+- **env.example** - пример переменных окружения

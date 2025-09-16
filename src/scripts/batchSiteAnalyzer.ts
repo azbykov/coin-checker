@@ -8,7 +8,8 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config/config';
 import { TelegramService, createMessageService } from '../services/telegramService';
-import { screenshotService } from '../services/screenshotService';
+
+import { ScreenshotTelegramService } from '../services/screenshotTelegramService';
 import { browserService } from '../services/browserService';
 import { visionParser } from '../services/visionParser';
 import { logger } from '../utils/logger';
@@ -17,6 +18,7 @@ import { CryptoProjectData, SiteConfig } from '../types';
 export class BatchSiteAnalyzer {
   private telegramService: TelegramService;
   private messageService: any;
+  private screenshotTelegramService: ScreenshotTelegramService;
   private telegramEnabled: boolean = false;
   private outputDir: string;
 
@@ -24,6 +26,7 @@ export class BatchSiteAnalyzer {
     this.outputDir = outputDir || config.app.screenshotsDir;
     this.telegramService = new TelegramService(config.telegram.botToken);
     this.messageService = createMessageService(this.telegramService.getBot(), config.telegram.botToken);
+    this.screenshotTelegramService = new ScreenshotTelegramService(this.telegramService.getBot(), config.telegram.botToken);
     this.ensureOutputDir();
   }
 
@@ -65,41 +68,119 @@ export class BatchSiteAnalyzer {
   private async analyzeSite(siteConfig: SiteConfig): Promise<CryptoProjectData | null> {
     try {
       logger.info(`Starting analysis of site: ${siteConfig.url}`);
-      if (siteConfig.selector) {
+      
+      // Проверяем, есть ли множественные селекторы
+      if (siteConfig.selectors && siteConfig.selectors.length > 0) {
+        logger.info(`Using multiple selectors: ${siteConfig.selectors.join(', ')}`);
+        
+        // Используем новый метод для множественных скриншотов
+        const multipleScreenshotsResult = await this.screenshotTelegramService.processMultipleScreenshots(
+          siteConfig.url,
+          {
+            saveToDisk: true,
+            savePath: this.outputDir,
+            sendToTelegram: false, // Не отправляем в Telegram пока не проанализируем
+            selectors: siteConfig.selectors,
+            format: 'png'
+          }
+        );
+        
+        if (!multipleScreenshotsResult.success) {
+          logger.error(`Failed to take multiple screenshots for ${siteConfig.url}`);
+          return null;
+        }
+        
+        // Анализируем каждый скриншот и объединяем данные
+        let combinedData: CryptoProjectData | null = null;
+        const allVisionData: any[] = [];
+        
+        for (const screenshotInfo of multipleScreenshotsResult.screenshots) {
+          if (screenshotInfo.error) {
+            logger.warn(`Skipping screenshot with error for selector "${screenshotInfo.selector}": ${screenshotInfo.error}`);
+            continue;
+          }
+          
+          // Анализируем скриншот с помощью Vision API
+          const visionData = await visionParser.parseScreenshot(screenshotInfo.screenshot);
+          
+          if (visionData) {
+            logger.info(`Vision data from selector "${screenshotInfo.selector}": ${JSON.stringify(visionData)}`);
+            allVisionData.push(visionData);
+          }
+        }
+        
+        // Объединяем все данные в один объект
+        if (allVisionData.length > 0) {
+          combinedData = this.mergeVisionData(allVisionData, siteConfig.url);
+          logger.info(`Combined vision data: ${JSON.stringify(combinedData)}`);
+        }
+        
+        return combinedData;
+        
+      } else if (siteConfig.selector) {
+        // Обычный одиночный селектор
         logger.info(`Using selector: ${siteConfig.selector}`);
-      }
-      logger.info(`Taking screenshot for: ${siteConfig.url}`);
+        logger.info(`Taking screenshot for: ${siteConfig.url}`);
 
-      // Делаем скриншот как в visionScanner.ts
-      const screenshotResult = await this.takeScreenshotWithSelector(siteConfig.url, siteConfig.selector);
+        // Делаем скриншот как в visionScanner.ts
+        const screenshotResult = await this.takeScreenshotWithSelector(siteConfig.url, siteConfig.selector);
+        
+        if (!screenshotResult.success) {
+          logger.error(`Failed to take screenshot for ${siteConfig.url}: ${screenshotResult.error}`);
+          return null;
+        }
+
+        // Сохраняем скриншот
+        this.saveScreenshot(screenshotResult.screenshot, siteConfig.url);
+
+        // Анализируем скриншот с помощью Vision API
+        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot);
+        
+        if (!visionData) {
+          logger.error(`Failed to parse screenshot for ${siteConfig.url}`);
+          return null;
+        }
+
+        const result: CryptoProjectData = {
+          ...visionData,
+          url: siteConfig.url,
+          timestamp: new Date(),
+        };
+
+        return result;
+      } else {
+        // Полностраничный скриншот
+        logger.info(`Taking full page screenshot for: ${siteConfig.url}`);
+
+        const screenshotResult = await this.takeScreenshotWithSelector(siteConfig.url);
+        
+        if (!screenshotResult.success) {
+          logger.error(`Failed to take screenshot for ${siteConfig.url}: ${screenshotResult.error}`);
+          return null;
+        }
+
+        // Сохраняем скриншот
+        this.saveScreenshot(screenshotResult.screenshot, siteConfig.url);
+
+        // Анализируем скриншот с помощью Vision API
+        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot);
+        
+        if (!visionData) {
+          logger.error(`Failed to parse screenshot for ${siteConfig.url}`);
+          return null;
+        }
+
+        const result: CryptoProjectData = {
+          ...visionData,
+          url: siteConfig.url,
+          timestamp: new Date(),
+        };
+
+        return result;
+      }
       
-      if (!screenshotResult.success) {
-        logger.error(`Failed to take screenshot for ${siteConfig.url}: ${screenshotResult.error}`);
-        return null;
-      }
-
-      // Сохраняем скриншот
-      this.saveScreenshot(screenshotResult.screenshot, siteConfig.url);
-
-      // Анализируем скриншот с помощью Vision API
-      const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot);
-      
-      if (!visionData) {
-        logger.error(`Failed to parse screenshot for ${siteConfig.url}`);
-        return null;
-      }
-
-      const result: CryptoProjectData = {
-        ...visionData,
-        url: siteConfig.url,
-        timestamp: new Date(),
-      };
-
-      logger.info(`Successfully analyzed ${siteConfig.url}`);
-      return result;
-
     } catch (error) {
-      logger.error(`Error analyzing site ${siteConfig.url}`, error as Error);
+      logger.error(`Failed to analyze site ${siteConfig.url}`, error as Error);
       return null;
     }
   }
@@ -146,8 +227,7 @@ export class BatchSiteAnalyzer {
       let screenshot: Buffer;
       
       if (selector) {
-        // Экранируем специальные символы в селекторе для Tailwind CSS
-        const escapedSelector = selector.replace(/[#\[\]]/g, '\\$&');
+        const escapedSelector = selector.replace(/[#\[\]%]/g, '\\$&');
         
         try {
           // Ждем появления элемента
@@ -225,19 +305,23 @@ export class BatchSiteAnalyzer {
 
   private async sendToTelegram(data: CryptoProjectData, screenshot: Buffer, screenshotPath?: string): Promise<void> {
     try {
-      const message = this.formatTelegramMessage(data, screenshot);
+      // Формируем подпись для скриншота с анализом
+      const caption = this.formatTelegramMessage(data, screenshot);
       
-      // Отправляем сообщение
-      await this.messageService.sendReport(config.telegram.chatId, message);
-      
-      // Отправляем скриншот
-      await this.messageService.sendPhoto(
-        config.telegram.chatId,
-        screenshot,
-        `Скриншот: ${data.url}${screenshotPath ? `\nФайл: ${screenshotPath}` : ''}`
+      // Отправляем скриншот с анализом в одном сообщении
+      await this.screenshotTelegramService.processScreenshot(
+        data.url,
+        {
+          saveToDisk: true,
+          savePath: this.outputDir,
+          sendToTelegram: true,
+          chatId: config.telegram.chatId,
+          caption: caption,
+          format: 'png'
+        }
       );
 
-      logger.info(`Successfully sent report to Telegram for ${data.url}`);
+      logger.info(`Successfully sent combined report to Telegram for ${data.url}`);
     } catch (error) {
       logger.error(`Failed to send report to Telegram for ${data.url}`, error as Error);
     }
@@ -290,14 +374,37 @@ export class BatchSiteAnalyzer {
             // Отправляем в Telegram если бот работает
             if (this.telegramEnabled) {
               try {
+                // Используем уже созданный скриншот из анализа
                 const screenshotResult = await this.takeScreenshotWithSelector(site.url, site.selector);
                 
                 if (screenshotResult.success) {
-                  // Сохраняем скриншот для Telegram
-                  const screenshotPath = this.saveScreenshot(screenshotResult.screenshot, site.url);
-                  await this.sendToTelegram(data, screenshotResult.screenshot, screenshotPath);
+                  // Отправляем скриншот с анализом в одном сообщении
+                  const caption = this.formatTelegramMessage(data, screenshotResult.screenshot);
+                  
+                  try {
+                    // Отправляем скриншот напрямую через messageService
+                    await this.messageService.sendPhoto(
+                      config.telegram.chatId,
+                      screenshotResult.screenshot,
+                      caption
+                    );
+                    
+                    logger.info(`Successfully sent combined report to Telegram for ${data.url}`);
+                  } catch (photoError) {
+                    // Если не удалось отправить фото, отправляем как документ
+                    logger.warn(`Failed to send photo, trying as document: ${(photoError as Error).message}`);
+                    
+                    await this.messageService.sendDocument(
+                      config.telegram.chatId,
+                      screenshotResult.screenshot,
+                      `screenshot_${new URL(data.url).hostname}.png`,
+                      caption
+                    );
+                    
+                    logger.info(`Successfully sent document report to Telegram for ${data.url}`);
+                  }
                 } else {
-                  // Отправляем только данные без скриншота
+                  // Если не удалось создать скриншот, отправляем только анализ
                   const message = this.formatTelegramMessage(data, Buffer.alloc(0));
                   await this.messageService.sendReport(config.telegram.chatId, message);
                 }
@@ -349,11 +456,63 @@ export class BatchSiteAnalyzer {
       logger.error('Failed to run batch site analysis', error as Error);
       throw error;
     } finally {
-      // Останавливаем Telegram бота если он был запущен
-      if (this.telegramEnabled) {
-        await this.telegramService.stop();
+      // Останавливаем Telegram бота если он был запущен и работает
+      if (this.telegramEnabled && this.telegramService) {
+        try {
+          await this.telegramService.stop();
+        } catch (error) {
+          logger.warn('Failed to stop Telegram bot (may not be running)');
+        }
       }
     }
+  }
+
+  /**
+   * Объединяет данные из нескольких Vision API результатов в один объект
+   * Приоритет отдается непустым значениям и значениям, отличным от "N/A"
+   */
+  private mergeVisionData(visionDataArray: any[], url: string): CryptoProjectData {
+    const merged: any = {
+      url: url,
+      timestamp: new Date(),
+      currentPrice: 'N/A',
+      nextPrice: 'N/A', 
+      listingPrice: 'N/A',
+      raised: 'N/A'
+    };
+
+    // Проходим по всем данным и выбираем лучшие значения
+    for (const data of visionDataArray) {
+      // Обновляем только если новое значение лучше (не пустое и не "N/A")
+      if (data.currentPrice && data.currentPrice !== 'N/A') {
+        // Если текущее значение "N/A", заменяем на новое
+        if (merged.currentPrice === 'N/A') {
+          merged.currentPrice = data.currentPrice;
+        }
+        // Если оба значения не "N/A", оставляем первое (можно изменить логику)
+      }
+      
+      if (data.nextPrice && data.nextPrice !== 'N/A') {
+        if (merged.nextPrice === 'N/A') {
+          merged.nextPrice = data.nextPrice;
+        }
+      }
+      
+      if (data.listingPrice && data.listingPrice !== 'N/A') {
+        if (merged.listingPrice === 'N/A') {
+          merged.listingPrice = data.listingPrice;
+        }
+      }
+      
+      if (data.raised && data.raised !== 'N/A') {
+        if (merged.raised === 'N/A') {
+          merged.raised = data.raised;
+        }
+      }
+    }
+
+    logger.info(`Merged ${visionDataArray.length} vision data sets into: ${JSON.stringify(merged)}`);
+    return merged as CryptoProjectData;
   }
 }
 

@@ -67,5 +67,6 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface SiteConfig {
   url: string;
   selector?: string;
+  selectors?: string[]; // Массив селекторов для множественных блоков
   skip?: boolean;
 } 

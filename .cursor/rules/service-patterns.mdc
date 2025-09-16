@@ -1,0 +1,69 @@
+---
+globs: src/services/*.ts
+---
+
+# Паттерны сервисов в Crypto Checker
+
+## Структура сервиса
+
+Каждый сервис должен следовать единому паттерну:
+
+```typescript
+import { logger } from '../utils/logger';
+import type { ServiceType } from '../types';
+
+class ServiceName {
+  private config: ServiceConfig;
+  
+  constructor(config: ServiceConfig) {
+    this.config = config;
+  }
+  
+  async initialize(): Promise<void> {
+    logger.info('Initializing ServiceName...');
+    // инициализация
+  }
+  
+  async cleanup(): Promise<void> {
+    logger.info('Cleaning up ServiceName...');
+    // очистка ресурсов
+  }
+}
+
+export const serviceName = new ServiceName(config);
+```
+
+## Основные сервисы
+
+### BrowserService
+- Управление экземплярами Puppeteer
+- Пул браузеров для параллельной обработки
+- Настройка viewport и таймаутов
+
+### ScreenshotService
+- Создание скриншотов страниц и элементов
+- Поддержка множественных селекторов
+- Обработка ошибок загрузки страниц
+
+### OpenAIService
+- Клиент для GPT-4 Vision API
+- Обработка изображений и текста
+- Управление токенами и лимитами
+
+### TelegramService
+- Инициализация Telegraf бота
+- Обработка команд и сообщений
+- Отправка уведомлений
+
+### Orchestrator
+- Координация всех сервисов
+- Управление потоком обработки
+- Сбор и агрегация результатов
+
+## Принципы
+
+1. **Единственная ответственность** - каждый сервис решает одну задачу
+2. **Инициализация и очистка** - всегда предоставляйте методы initialize() и cleanup()
+3. **Логирование** - логируйте важные операции
+4. **Обработка ошибок** - обрабатывайте ошибки на уровне сервиса
+5. **Типизация** - используйте строгие типы из [types/index.ts](mdc:src/types/index.ts)

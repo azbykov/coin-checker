@@ -1,0 +1,62 @@
+---
+globs: *.ts,*.tsx
+---
+
+# Стандарты TypeScript для Crypto Checker
+
+## Строгая типизация
+
+Проект использует строгий режим TypeScript. Всегда:
+
+- Используйте явные типы для параметров функций
+- Избегайте `any` - используйте `unknown` или конкретные типы
+- Используйте интерфейсы из [types/index.ts](mdc:src/types/index.ts)
+- Проверяйте типы перед использованием
+
+## Импорты и экспорты
+
+- Используйте именованные экспорты: `export const service = ...`
+- Импортируйте типы с `import type`: `import type { CryptoProjectData } from '../types'`
+- Группируйте импорты: сначала внешние библиотеки, потом внутренние модули
+
+## Обработка ошибок
+
+- Всегда используйте try-catch для асинхронных операций
+- Логируйте ошибки через [logger.ts](mdc:src/utils/logger.ts)
+- Используйте типизированные ошибки: `throw new Error('Описание ошибки')`
+
+## Асинхронный код
+
+- Используйте `async/await` вместо Promise.then()
+- Всегда указывайте возвращаемый тип для async функций
+- Обрабатывайте ошибки в async функциях
+
+## Комментарии
+
+- Используйте JSDoc для публичных функций
+- Добавляйте TODO комментарии для незавершённого кода
+- Объясняйте сложную бизнес-логику
+
+## Примеры
+
+```typescript
+// ✅ Правильно
+import type { CryptoProjectData } from '../types';
+import { logger } from '../utils/logger';
+
+export async function processUrl(url: string): Promise<CryptoProjectData | null> {
+  try {
+    logger.info(`Processing URL: ${url}`);
+    // логика обработки
+    return result;
+  } catch (error) {
+    logger.error('Failed to process URL', error as Error);
+    return null;
+  }
+}
+
+// ❌ Неправильно
+export function processUrl(url) { // нет типов
+  // нет обработки ошибок
+}
+```

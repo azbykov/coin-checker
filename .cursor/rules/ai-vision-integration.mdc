@@ -1,0 +1,81 @@
+---
+description: Правила для работы с OpenAI Vision API и анализом изображений
+---
+
+# OpenAI Vision API интеграция
+
+## Основные компоненты
+
+- **openaiService.ts** - клиент для OpenAI API
+- **visionParser.ts** - парсинг изображений через GPT-4 Vision
+- **screenshotService.ts** - создание скриншотов для анализа
+
+## Рабочий процесс
+
+1. **Создание скриншота** → [screenshotService.ts](mdc:src/services/screenshotService.ts)
+2. **Отправка в Vision API** → [openaiService.ts](mdc:src/services/openaiService.ts)
+3. **Парсинг ответа** → [visionParser.ts](mdc:src/services/visionParser.ts)
+4. **Валидация данных** → [dataValidator.ts](mdc:src/utils/dataValidator.ts)
+
+## Структура данных
+
+Извлекаемые данные из скриншотов крипто-проектов:
+
+```typescript
+interface CryptoProjectData {
+  currentPrice: string;    // Текущая цена токена
+  nextPrice: string;       // Следующая цена (если есть)
+  listingPrice: string;    // Цена при листинге
+  raised: string;          // Собранные средства
+  url: string;             // URL проекта
+  timestamp: Date;         // Время анализа
+}
+```
+
+## Множественные селекторы
+
+Поддержка анализа нескольких блоков на одной странице:
+
+```json
+{
+  "url": "https://example.com/",
+  "selectors": [
+    ".price-section",
+    ".token-info", 
+    ".progress-bar"
+  ]
+}
+```
+
+Логика объединения:
+- Каждый блок анализируется отдельно
+- Результаты объединяются с приоритетом непустых значений
+- "N/A" заменяется на реальные данные из других блоков
+
+## Промпты для Vision API
+
+Используйте структурированные промпты для извлечения данных:
+
+```
+Проанализируй этот скриншот крипто-проекта и извлеки:
+- Текущую цену токена
+- Цену при листинге
+- Собранные средства
+- Следующую цену (если есть)
+
+Верни данные в JSON формате.
+```
+
+## Обработка ошибок
+
+- Таймауты для Vision API запросов
+- Повторные попытки при ошибках
+- Fallback на простой анализ при недоступности API
+- Логирование всех запросов и ответов
+
+## Конфигурация
+
+Переменные окружения:
+- `OPENAI_API_KEY` - API ключ OpenAI
+- `BROWSER_TIMEOUT` - таймаут браузера (по умолчанию 30000мс)
+- `MAX_CONCURRENT_REQUESTS` - максимум параллельных запросов (по умолчанию 3)

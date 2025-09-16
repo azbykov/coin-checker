@@ -1,0 +1,89 @@
+---
+description: Правила для процесса разработки и работы с проектом
+---
+
+# Процесс разработки Crypto Checker
+
+## Скрипты npm
+
+Основные команды для разработки:
+
+```bash
+# Разработка
+npm run dev              # Запуск в режиме разработки
+npm run build           # Сборка TypeScript
+npm start              # Запуск скомпилированного приложения
+
+# Качество кода
+npm run lint           # Проверка ESLint
+npm run lint:fix       # Автоисправление ESLint
+npm run format         # Форматирование Prettier
+npm run type-check     # Проверка типов TypeScript
+
+# Специализированные скрипты
+npm run scan           # Простой сканер
+npm run vision         # Сканер с Vision API
+npm run batch-sites    # Пакетный анализ сайтов
+```
+
+## Структура веток Git
+
+- `main` - стабильная версия
+- `feature/*` - новые функции
+- `bugfix/*` - исправления ошибок
+- `hotfix/*` - критические исправления
+
+## Переменные окружения
+
+Создайте `.env` файл на основе `env.example`:
+
+```env
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Telegram Bot Configuration  
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# Browser Configuration
+BROWSER_HEADLESS=true
+BROWSER_TIMEOUT=30000
+
+# Application Configuration
+LOG_LEVEL=info
+MAX_CONCURRENT_REQUESTS=3
+```
+
+## Тестирование
+
+- Запускайте `npm run type-check` перед коммитом
+- Проверяйте код через `npm run lint`
+- Тестируйте на реальных URL крипто-проектов
+- Проверяйте работу Telegram бота
+
+## Конфигурация сайтов
+
+Добавляйте новые сайты в [sites.json](mdc:src/config/sites.json):
+
+```json
+{
+  "url": "https://example-ico.com",
+  "selector": ".price-widget",
+  "skip": false
+}
+```
+
+## Отладка
+
+- Используйте `LOG_LEVEL=debug` для детального логирования
+- Проверяйте папку `temp/` для скриншотов
+- Логи сохраняются в консоль с временными метками
+- Используйте `BROWSER_HEADLESS=false` для визуальной отладки
+
+## Деплой
+
+1. Соберите проект: `npm run build`
+2. Проверьте переменные окружения
+3. Запустите: `npm start`
+4. Проверьте логи на ошибки
+5. Протестируйте Telegram бота

@@ -11,14 +11,9 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",
     "type-check": "tsc --noEmit",
-    "batch": "tsx src/scripts/runBatch.ts",
     "scan": "tsx src/scripts/simpleScanner.ts",
     "vision": "tsx src/scripts/visionScanner.ts",
-    "batch-sites": "tsx src/scripts/runBatchAnalysis.ts",
-    "test-single": "tsx src/scripts/testSingleSite.ts",
-    "test-telegram": "tsx src/scripts/testTelegram.ts",
-    "test-telegraf": "tsx src/scripts/testTelegraf.ts",
-    "bot": "tsx src/scripts/telegramBot.ts"
+    "batch-sites": "tsx src/scripts/runBatchAnalysis.ts"
   },
   "keywords": [
     "crypto",
@@ -30,7 +25,6 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.0",
     "dotenv": "^16.3.0",
     "openai": "^4.20.0",
     "puppeteer": "^24.17.0",
