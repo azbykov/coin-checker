@@ -9,13 +9,16 @@ description: Правила для работы с OpenAI Vision API и анал
 - **openaiService.ts** - клиент для OpenAI API
 - **visionParser.ts** - парсинг изображений через GPT-4 Vision
 - **screenshotService.ts** - создание скриншотов для анализа
+- **selectorUtils.ts** - общие утилиты для работы с селекторами и скриншотами
+- **batchSiteAnalyzer.ts** - интеграция AI анализа в основной процесс
 
 ## Рабочий процесс
 
-1. **Создание скриншота** → [screenshotService.ts](mdc:src/services/screenshotService.ts)
-2. **Отправка в Vision API** → [openaiService.ts](mdc:src/services/openaiService.ts)
-3. **Парсинг ответа** → [visionParser.ts](mdc:src/services/visionParser.ts)
-4. **Валидация данных** → [dataValidator.ts](mdc:src/utils/dataValidator.ts)
+1. **Настройка страницы** → [selectorUtils.ts](mdc:src/utils/selectorUtils.ts)
+2. **Создание скриншота** → [selectorUtils.ts](mdc:src/utils/selectorUtils.ts) или [screenshotService.ts](mdc:src/services/screenshotService.ts)
+3. **Отправка в Vision API** → [openaiService.ts](mdc:src/services/openaiService.ts)
+4. **Парсинг ответа** → [visionParser.ts](mdc:src/services/visionParser.ts)
+5. **Валидация данных** → [dataValidator.ts](mdc:src/utils/dataValidator.ts)
 
 ## Структура данных
 
@@ -72,6 +75,32 @@ interface CryptoProjectData {
 - Повторные попытки при ошибках
 - Fallback на простой анализ при недоступности API
 - Логирование всех запросов и ответов
+
+## Утилиты для селекторов
+
+Используйте [selectorUtils.ts](mdc:src/utils/selectorUtils.ts) для работы с селекторами:
+
+```typescript
+import { createLocator, takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
+
+// Поддерживаемые типы селекторов:
+// CSS: ".class-name", "#id-name", "[data-testid='...']"
+// Текст: "text=Your purchased $PEAP"
+// XPath: "xpath=//div[@class='example']"
+// Комбинированные: "text=Текст >> xpath=../../.."
+
+// Создание локатора
+const locator = createLocator(page, selector);
+
+// Скриншот элемента
+const screenshot = await takeScreenshotWithSelector(page, selector);
+
+// Настройка страницы
+await setupPageForScreenshots(page);
+
+// Ожидание загрузки
+await waitForPageLoad(page);
+```
 
 ## Конфигурация
 

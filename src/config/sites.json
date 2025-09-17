@@ -5,15 +5,15 @@
   },
   {
     "url": "https://pepeascension.com/",
-    "selector": ".pr-[10%]"
+    "selector": "xpath=//p[contains(text(), 'Your purchased')]/../.."
   },
   {
     "url": "https://littlepepe.com/",
-    "selector": ".css-19kzrtu"
+    "selector": "xpath=//*[contains(text(), 'Next Stage Price')]/../../.."
   },
   {
     "url": "https://unilabs.finance/",
-    "selector": ".bg-[#00060F7A]"
+    "selector": "xpath=//*[contains(text(), 'Current Price:')]/../../.."
   },
   {
     "url": "https://rcofinance.com/",
@@ -21,7 +21,14 @@
   },
   {
     "url": "https://www.mutuumfinance.app/",
-    "selector": ".card.backdrop-blur-sm"
+    "selector": "xpath=//*[contains(text(), 'Current price: $')]/../../..",
+    "customData": [
+      {
+        "source": "text",
+        "label": "Token Phases",
+        "text": "Phase 1 — Price: $0.01 — Allocated Tokens: 110,000,000\nPhase 2 — Price: $0.015 — Allocated Tokens: 120,000,000\nPhase 3 — Price: $0.02 — Allocated Tokens: 130,000,000\nPhase 4 — Price: $0.025 — Allocated Tokens: 140,000,000\nPhase 5 — Price: $0.03 — Allocated Tokens: 150,000,000\nPhase 6 — Price: $0.035 — Allocated Tokens: 170,000,000\nPhase 7 — Price: $0.04 — Allocated Tokens: 180,000,000\nPhase 8 — Price: $0.045 — Allocated Tokens: 190,000,000\nPhase 9 — Price: $0.05 — Allocated Tokens: 200,000,000\nPhase 10 — Price: $0.055 — Allocated Tokens: 210,000,000\nPhase 11 — Price: $0.06 — Allocated Tokens: 220,000,000\nНужно определить какая сейчас следующая цена (следующая фаза после распродажи текущей) и определить цену листинга."
+      }
+    ]
   },
   {
     "url": "https://pinosale.com/",
@@ -33,27 +40,51 @@
   },
   {
     "url": "https://bitcoinhyper.com/",
-    "selector": ".widget-wrapper"
+    "selector": "xpath=//span[contains(text(), 'USD RAISED:')]/../../../../.."
   },
   {
     "url": "https://web3ai.com/",
-    "selectors": [".style_presaleContent__tKBRD", ".style_topbar__L_F6x"]
+    "selectors": ["xpath=//h5[contains(text(), 'total tokens sold')]/../../../../..", "xpath=//a[@href='http://buy2.web3ai.com']"],
+    "wallet": true
   },
   {
     "url": "https://unstaked.com/",
-    "selector": ".style_topBar__Xf743"
+    "dataSource": "json",
+    "jsonApi": {
+      "endpoint": "https://presaleapi.unstaked.com/",
+      "method": "GET",
+      "headers": {
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://presale2.unstaked.com",
+        "Referer": "https://presale2.unstaked.com/",
+        "project": "https://unstaked.com/"
+      },
+      "dataMapping": {
+        "currentPrice": "tokenPrice",
+        "nextPrice": "nextStageTokenPrice",
+        "raised": "totalSoldTokensValueUsd"
+      }
+    },
+    "customData": [
+       {
+         "source": "selector", 
+         "label": "Launch Price",
+         "selector": ".style_notifications__3qaav",
+         "url": "https://presale2.unstaked.com/"
+       }
+    ]
   },
   {
     "url": "https://xyzverse.io/",
-    "selector": ".Cards_card__PcFdQ"
+    "selector": "xpath=//div[contains(text(), 'Текущая цена')]/../../.."
   },
   {
     "url": "https://snortertoken.com/",
-    "selector": ".widget-wrapper"
+    "selector": "xpath=//div[contains(text(), 'USDT Raised:')]/../.."
   },
   {
     "url": "https://web3bay.io/buy",
-    "selector": ".wallet_wallet__HKWGq"
+    "selector": "xpath=//p[contains(text(), 'Total Raised')]/../.."
   },
   {
     "url": "https://fatty.io/",
@@ -62,18 +93,19 @@
   {
     "url": "https://lightchain.ai/",
     "selector": ".presale-box"
+    "skip": true
   },
   {
     "url": "https://purchase.dragoin.io/",
-    "selector": ".wallet_wallet__HKWGq"
+    "selector": "xpath=//p[contains(text(), 'Current Price')]/../../.."
   },
   {
     "url": "https://presale.ruvi.io/",
-    "selector": ".p-6.pt-0.space-y-6"
+    "selector": "xpath=//p[contains(text(), 'Current Price')]/../../.."
   },
   {
     "url": "https://remittix.io/",
-    "selector": ".card-content.text-[10\\.28px]"
+    "selector": "xpath=//*[contains(text(), 'Buy Now')]/../.."
   },
   {
     "url": "https://sponge.vip/en",

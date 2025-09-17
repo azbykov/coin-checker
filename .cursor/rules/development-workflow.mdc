@@ -10,9 +10,9 @@ description: Правила для процесса разработки и ра
 
 ```bash
 # Разработка
-npm run dev              # Запуск в режиме разработки
+npm run dev              # Запуск анализа в режиме разработки
 npm run build           # Сборка TypeScript
-npm start              # Запуск скомпилированного приложения
+npm start              # Запуск скомпилированного анализа
 
 # Качество кода
 npm run lint           # Проверка ESLint
@@ -21,9 +21,10 @@ npm run format         # Форматирование Prettier
 npm run type-check     # Проверка типов TypeScript
 
 # Специализированные скрипты
-npm run scan           # Простой сканер
-npm run vision         # Сканер с Vision API
-npm run batch-sites    # Пакетный анализ сайтов
+npm run analyze        # Полный анализ с AI и Telegram
+npm run scan           # Простой сканер скриншотов
+npm run scan:help      # Справка по сканированию
+npm run scan:file      # Сканирование из файла
 ```
 
 ## Структура веток Git

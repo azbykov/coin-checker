@@ -12,8 +12,11 @@ import { TelegramService, createMessageService } from '../services/telegramServi
 import { ScreenshotTelegramService } from '../services/screenshotTelegramService';
 import { browserService } from '../services/browserService';
 import { visionParser } from '../services/visionParser';
+import { jsonApiService } from '../services/jsonApiService';
+import { customDataService } from '../services/customDataService';
 import { logger } from '../utils/logger';
 import { CryptoProjectData, SiteConfig } from '../types';
+import { takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
 
 export class BatchSiteAnalyzer {
   private telegramService: TelegramService;
@@ -36,6 +39,7 @@ export class BatchSiteAnalyzer {
       logger.info(`Создана папка для скриншотов: ${this.outputDir}`);
     }
   }
+
 
   private saveScreenshot(screenshot: Buffer, url: string): string {
     try {
@@ -65,9 +69,22 @@ export class BatchSiteAnalyzer {
     }
   }
 
-  private async analyzeSite(siteConfig: SiteConfig): Promise<CryptoProjectData | null> {
+  public async analyzeSite(siteConfig: SiteConfig): Promise<CryptoProjectData | null> {
     try {
       logger.info(`Starting analysis of site: ${siteConfig.url}`);
+      
+      // Собираем customData если есть
+      let customData: any[] = [];
+      if (siteConfig.customData && siteConfig.customData.length > 0) {
+        logger.info(`Collecting custom data for: ${siteConfig.url}`);
+        customData = await customDataService.collectCustomData(siteConfig.url, siteConfig.customData);
+      }
+      
+      // Проверяем источник данных
+      if (siteConfig.dataSource === 'json' && siteConfig.jsonApi) {
+        logger.info(`Using JSON API for: ${siteConfig.url}`);
+        return await this.analyzeJsonApi(siteConfig, customData);
+      }
       
       // Проверяем, есть ли множественные селекторы
       if (siteConfig.selectors && siteConfig.selectors.length > 0) {
@@ -101,7 +118,7 @@ export class BatchSiteAnalyzer {
           }
           
           // Анализируем скриншот с помощью Vision API
-          const visionData = await visionParser.parseScreenshot(screenshotInfo.screenshot);
+          const visionData = await visionParser.parseScreenshot(screenshotInfo.screenshot, customData);
           
           if (visionData) {
             logger.info(`Vision data from selector "${screenshotInfo.selector}": ${JSON.stringify(visionData)}`);
@@ -111,7 +128,7 @@ export class BatchSiteAnalyzer {
         
         // Объединяем все данные в один объект
         if (allVisionData.length > 0) {
-          combinedData = this.mergeVisionData(allVisionData, siteConfig.url);
+          combinedData = this.mergeVisionData(allVisionData, siteConfig.url, customData);
           logger.info(`Combined vision data: ${JSON.stringify(combinedData)}`);
         }
         
@@ -134,7 +151,7 @@ export class BatchSiteAnalyzer {
         this.saveScreenshot(screenshotResult.screenshot, siteConfig.url);
 
         // Анализируем скриншот с помощью Vision API
-        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot);
+        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot, customData);
         
         if (!visionData) {
           logger.error(`Failed to parse screenshot for ${siteConfig.url}`);
@@ -145,6 +162,7 @@ export class BatchSiteAnalyzer {
           ...visionData,
           url: siteConfig.url,
           timestamp: new Date(),
+          customData: customData,
         };
 
         return result;
@@ -163,7 +181,7 @@ export class BatchSiteAnalyzer {
         this.saveScreenshot(screenshotResult.screenshot, siteConfig.url);
 
         // Анализируем скриншот с помощью Vision API
-        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot);
+        const visionData = await visionParser.parseScreenshot(screenshotResult.screenshot, customData);
         
         if (!visionData) {
           logger.error(`Failed to parse screenshot for ${siteConfig.url}`);
@@ -174,6 +192,7 @@ export class BatchSiteAnalyzer {
           ...visionData,
           url: siteConfig.url,
           timestamp: new Date(),
+          customData: customData,
         };
 
         return result;
@@ -185,28 +204,214 @@ export class BatchSiteAnalyzer {
     }
   }
 
+  private async analyzeJsonApi(siteConfig: SiteConfig, customData: any[]): Promise<CryptoProjectData | null> {
+    try {
+      if (!siteConfig.jsonApi) {
+        logger.error('JSON API configuration is missing');
+        return null;
+      }
+
+      // Получаем данные из JSON API
+      const jsonResult = await jsonApiService.fetchData(siteConfig.url, siteConfig.jsonApi);
+      
+      if (!jsonResult.success) {
+        logger.error(`Failed to fetch JSON data for ${siteConfig.url}: ${jsonResult.error}`);
+        return null;
+      }
+
+      // Парсим данные в формат CryptoProjectData
+      const parsedData = jsonApiService.parseData(jsonResult.data, siteConfig.jsonApi, siteConfig.url);
+      
+      if (!parsedData) {
+        logger.error(`Failed to parse JSON data for ${siteConfig.url}`);
+        return null;
+      }
+
+      // Отправляем данные в ChatGPT для дополнительного анализа
+      logger.info(`Sending JSON data to ChatGPT for analysis: ${siteConfig.url}`);
+      const aiAnalysis = await this.analyzeWithChatGPT(jsonResult.data, customData, siteConfig.url);
+
+      console.log('aiAnalysis111', {aiAnalysis});
+      
+      // Объединяем JSON данные с AI анализом
+      const finalData: CryptoProjectData = {
+        ...parsedData,
+        customData: customData,
+        // Перезаписываем поля AI анализом, если он более точный
+        ...(aiAnalysis || {})
+      };
+      
+      logger.info(`Successfully analyzed JSON data with AI for ${siteConfig.url}: ${JSON.stringify(finalData)}`);
+      return finalData;
+    } catch (error) {
+      logger.error(`Failed to analyze JSON API for ${siteConfig.url}`, error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Анализирует JSON данные с помощью ChatGPT
+   */
+  private async analyzeWithChatGPT(
+    jsonData: any, 
+    customData: any[], 
+    url: string
+  ): Promise<CryptoProjectData | null> {
+    try {
+      console.log('jsonData111', {customData, jsonData, url});
+      // Формируем промпт для анализа JSON данных
+      let prompt = `Ты - помощник для анализа данных криптовалютных проектов.
+
+Проанализируй следующие JSON данные и верни структурированную информацию в формате JSON:
+
+JSON данные:
+${JSON.stringify(jsonData, null, 2)}`;
+
+      // Добавляем customData если есть
+      if (customData && customData.length > 0) {
+        const successfulData = customData.filter(item => item.success && item.data.trim());
+        if (successfulData.length > 0) {
+          prompt += '\n\nДополнительная информация:';
+          for (const item of successfulData) {
+            prompt += `\n${item.label}: ${item.data}`;
+          }
+        }
+      }
+
+      prompt += `\n\nВерни JSON объект с полями:
+{
+  "currentPrice": "текущая цена токена",
+  "nextPrice": "следующая цена токена", 
+  "listingPrice": "цена при листинге",
+  "raised": "собранная сумма"
+}
+
+ВАЖНЫЕ ПРАВИЛА ФОРМАТИРОВАНИЯ:
+1. Цены должны быть в исходном числовом формате (например: "0.0120919147161117" или "0.1819")
+2. Суммы должны быть в числовом формате с точностью до 2 знаков (например: "10940083.36" или "10.94")
+3. Если значение не найдено, используй "N/A"
+4. Извлекай точные числовые значения из JSON данных
+5. Для "raised" ищи поля типа: totalRaised, totalSold, raised, funds, collected
+6. Для "listingPrice" ищи поля типа: listingPrice, launchPrice, finalPrice, icoPrice
+7. Для "currentPrice" ищи поля типа: currentPrice, tokenPrice, price, current
+8. Для "nextPrice" ищи поля типа: nextPrice, nextStagePrice, stagePrice, upcomingPrice
+
+ПРИМЕРЫ ПРАВИЛЬНОГО ФОРМАТИРОВАНИЯ:
+- Цена: "0.0120919147161117" (исходное значение, не "$0.012091" или "0.012091 USD")
+- Сумма: "10940083.36" (2 знака после запятой, не "$10,940,083.35" или "10.94M USD")
+- Если в JSON есть "tokenPrice": "0.0120919147161117", то currentPrice = "0.0120919147161117"`;
+
+      // Логируем промпт для отладки
+      logger.debug(`Sending prompt to ChatGPT: ${prompt.substring(0, 500)}...`);
+
+      // Отправляем в OpenAI
+      const response = await visionParser['client'].chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      
+      if (!content) {
+        logger.warn('Empty response from ChatGPT for JSON analysis');
+        return null;
+      }
+
+      // Логируем ответ от ChatGPT
+      logger.debug(`ChatGPT response: ${content}`);
+
+      // Парсим ответ
+      const aiData = JSON.parse(content);
+      
+      // Валидируем и форматируем данные
+      const formattedData = {
+        currentPrice: this.formatPrice(aiData.currentPrice),
+        nextPrice: this.formatPrice(aiData.nextPrice),
+        listingPrice: this.formatPrice(aiData.listingPrice),
+        raised: this.formatAmount(aiData.raised),
+        url: url,
+        timestamp: new Date(),
+      };
+      
+      logger.info(`ChatGPT analysis result: ${JSON.stringify(formattedData)}`);
+      
+      return formattedData;
+    } catch (error) {
+      logger.error('Failed to analyze JSON data with ChatGPT', error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Форматирует цену (возвращает исходное значение)
+   */
+  private formatPrice(value: any): string {
+    if (!value || value === 'N/A') return 'N/A';
+    
+    // Убираем валютные символы и пробелы
+    const cleanValue = String(value).replace(/[$€£¥,\s]/g, '');
+    
+    // Проверяем, является ли значение числом
+    const numValue = parseFloat(cleanValue);
+    if (isNaN(numValue)) return 'N/A';
+    
+    // Возвращаем исходное числовое значение без форматирования
+    return numValue.toString();
+  }
+
+  /**
+   * Форматирует сумму в читабельный формат (до 2 знаков после запятой)
+   */
+  private formatAmount(value: any): string {
+    if (!value || value === 'N/A') return 'N/A';
+    
+    // Убираем валютные символы, запятые и пробелы
+    let cleanValue = String(value).replace(/[$€£¥,\s]/g, '');
+    
+    // Обрабатываем сокращения (M, K, B)
+    if (cleanValue.includes('M')) {
+      cleanValue = cleanValue.replace('M', '');
+      const numValue = parseFloat(cleanValue) * 1000000;
+      return isNaN(numValue) ? 'N/A' : numValue.toFixed(2);
+    }
+    
+    if (cleanValue.includes('K')) {
+      cleanValue = cleanValue.replace('K', '');
+      const numValue = parseFloat(cleanValue) * 1000;
+      return isNaN(numValue) ? 'N/A' : numValue.toFixed(2);
+    }
+    
+    if (cleanValue.includes('B')) {
+      cleanValue = cleanValue.replace('B', '');
+      const numValue = parseFloat(cleanValue) * 1000000000;
+      return isNaN(numValue) ? 'N/A' : numValue.toFixed(2);
+    }
+    
+    // Проверяем, является ли значение числом
+    const numValue = parseFloat(cleanValue);
+    if (isNaN(numValue)) return 'N/A';
+    
+    // Форматируем до 2 знаков после запятой
+    return numValue.toFixed(2);
+  }
+
   private async takeScreenshotWithSelector(url: string, selector?: string): Promise<{ success: boolean; screenshot: Buffer; error?: string }> {
-    const { Page } = await import('puppeteer');
     let page: any = null;
 
     try {
       const browser = await browserService.getBrowser();
       page = await browser.newPage();
       
-      // Обработка ошибок страницы
-      page.on('error', (error: Error) => {
-        logger.error(`Ошибка страницы: ${error.message}`);
-      });
-      
-      page.on('pageerror', (error: Error) => {
-        logger.error(`JavaScript ошибка: ${error.message}`);
-      });
-      
-      // Настройка viewport
-      await page.setViewport({ width: 1920, height: 1080 });
-      
-      // Устанавливаем user-agent для обхода блокировки
-      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      // Настройка страницы для скриншотов
+      await setupPageForScreenshots(page);
       
       // Переход на страницу
       await page.goto(url, { 
@@ -214,58 +419,11 @@ export class BatchSiteAnalyzer {
         timeout: 30000 
       });
       
-      // Ожидание загрузки контента
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Ожидание полной загрузки
+      await waitForPageLoad(page);
       
-      // Дополнительное ожидание для динамического контента
-      try {
-        await page.waitForFunction('document.readyState === "complete"', { timeout: 10000 });
-      } catch (error) {
-        logger.warn('Страница не полностью загружена, продолжаем...');
-      }
-      
-      let screenshot: Buffer;
-      
-      if (selector) {
-        const escapedSelector = selector.replace(/[#\[\]%]/g, '\\$&');
-        
-        try {
-          // Ждем появления элемента
-          await page.waitForSelector(escapedSelector, { timeout: 10000 });
-          
-          // Делаем скриншот конкретного элемента
-          const element = await page.$(escapedSelector);
-          if (!element) {
-            throw new Error(`Элемент с селектором "${selector}" не найден`);
-          }
-          
-          // Проверяем, что элемент все еще видим
-          const isVisible = await element.isVisible();
-          if (!isVisible) {
-            throw new Error(`Элемент с селектором "${selector}" не видим`);
-          }
-          
-          screenshot = await element.screenshot({
-            type: 'png'
-          }) as Buffer;
-          
-          logger.info(`Скриншот элемента "${selector}" создан для: ${url}`);
-        } catch (selectorError) {
-          logger.warn(`Селектор "${selector}" не найден, делаем полностраничный скриншот: ${(selectorError as Error).message}`);
-          
-          // Если селектор не найден, делаем полностраничный скриншот
-          screenshot = await page.screenshot({
-            type: 'png',
-            fullPage: true,
-          }) as Buffer;
-        }
-      } else {
-        // Полностраничный скриншот
-        screenshot = await page.screenshot({
-          type: 'png',
-          fullPage: true,
-        }) as Buffer;
-      }
+      // Делаем скриншот с использованием общих утилит
+      const screenshot = await takeScreenshotWithSelector(page, selector, 10000);
 
       return {
         success: true,
@@ -303,29 +461,6 @@ export class BatchSiteAnalyzer {
     return message.trim();
   }
 
-  private async sendToTelegram(data: CryptoProjectData, screenshot: Buffer, screenshotPath?: string): Promise<void> {
-    try {
-      // Формируем подпись для скриншота с анализом
-      const caption = this.formatTelegramMessage(data, screenshot);
-      
-      // Отправляем скриншот с анализом в одном сообщении
-      await this.screenshotTelegramService.processScreenshot(
-        data.url,
-        {
-          saveToDisk: true,
-          savePath: this.outputDir,
-          sendToTelegram: true,
-          chatId: config.telegram.chatId,
-          caption: caption,
-          format: 'png'
-        }
-      );
-
-      logger.info(`Successfully sent combined report to Telegram for ${data.url}`);
-    } catch (error) {
-      logger.error(`Failed to send report to Telegram for ${data.url}`, error as Error);
-    }
-  }
 
   async run(): Promise<void> {
     try {
@@ -374,39 +509,47 @@ export class BatchSiteAnalyzer {
             // Отправляем в Telegram если бот работает
             if (this.telegramEnabled) {
               try {
-                // Используем уже созданный скриншот из анализа
-                const screenshotResult = await this.takeScreenshotWithSelector(site.url, site.selector);
-                
-                if (screenshotResult.success) {
-                  // Отправляем скриншот с анализом в одном сообщении
-                  const caption = this.formatTelegramMessage(data, screenshotResult.screenshot);
-                  
-                  try {
-                    // Отправляем скриншот напрямую через messageService
-                    await this.messageService.sendPhoto(
-                      config.telegram.chatId,
-                      screenshotResult.screenshot,
-                      caption
-                    );
-                    
-                    logger.info(`Successfully sent combined report to Telegram for ${data.url}`);
-                  } catch (photoError) {
-                    // Если не удалось отправить фото, отправляем как документ
-                    logger.warn(`Failed to send photo, trying as document: ${(photoError as Error).message}`);
-                    
-                    await this.messageService.sendDocument(
-                      config.telegram.chatId,
-                      screenshotResult.screenshot,
-                      `screenshot_${new URL(data.url).hostname}.png`,
-                      caption
-                    );
-                    
-                    logger.info(`Successfully sent document report to Telegram for ${data.url}`);
-                  }
-                } else {
-                  // Если не удалось создать скриншот, отправляем только анализ
+                // Проверяем источник данных - для JSON API не отправляем скриншоты
+                if (site.dataSource === 'json') {
+                  // Для JSON API отправляем только текстовый отчет
                   const message = this.formatTelegramMessage(data, Buffer.alloc(0));
                   await this.messageService.sendReport(config.telegram.chatId, message);
+                  logger.info(`Successfully sent JSON report to Telegram for ${data.url}`);
+                } else {
+                  // Для скриншотов создаем и отправляем изображение
+                  const screenshotResult = await this.takeScreenshotWithSelector(site.url, site.selector);
+                  
+                  if (screenshotResult.success) {
+                    // Отправляем скриншот с анализом в одном сообщении
+                    const caption = this.formatTelegramMessage(data, screenshotResult.screenshot);
+                    
+                    try {
+                      // Отправляем скриншот напрямую через messageService
+                      await this.messageService.sendPhoto(
+                        config.telegram.chatId,
+                        screenshotResult.screenshot,
+                        caption
+                      );
+                      
+                      logger.info(`Successfully sent combined report to Telegram for ${data.url}`);
+                    } catch (photoError) {
+                      // Если не удалось отправить фото, отправляем как документ
+                      logger.warn(`Failed to send photo, trying as document: ${(photoError as Error).message}`);
+                      
+                      await this.messageService.sendDocument(
+                        config.telegram.chatId,
+                        screenshotResult.screenshot,
+                        `screenshot_${new URL(data.url).hostname}.png`,
+                        caption
+                      );
+                      
+                      logger.info(`Successfully sent document report to Telegram for ${data.url}`);
+                    }
+                  } else {
+                    // Если не удалось создать скриншот, отправляем только анализ
+                    const message = this.formatTelegramMessage(data, Buffer.alloc(0));
+                    await this.messageService.sendReport(config.telegram.chatId, message);
+                  }
                 }
               } catch (telegramError) {
                 logger.error(`Failed to send to Telegram: ${site.url}`, telegramError as Error);
@@ -464,6 +607,14 @@ export class BatchSiteAnalyzer {
           logger.warn('Failed to stop Telegram bot (may not be running)');
         }
       }
+      
+      // Очищаем ресурсы браузера
+      try {
+        await browserService.close();
+        logger.info('Browser service cleaned up in batch analyzer');
+      } catch (error) {
+        logger.warn('Failed to cleanup browser service in batch analyzer');
+      }
     }
   }
 
@@ -471,7 +622,7 @@ export class BatchSiteAnalyzer {
    * Объединяет данные из нескольких Vision API результатов в один объект
    * Приоритет отдается непустым значениям и значениям, отличным от "N/A"
    */
-  private mergeVisionData(visionDataArray: any[], url: string): CryptoProjectData {
+  private mergeVisionData(visionDataArray: any[], url: string, customData: any[]): CryptoProjectData {
     const merged: any = {
       url: url,
       timestamp: new Date(),
@@ -511,6 +662,9 @@ export class BatchSiteAnalyzer {
       }
     }
 
+    // Добавляем customData
+    merged.customData = customData;
+    
     logger.info(`Merged ${visionDataArray.length} vision data sets into: ${JSON.stringify(merged)}`);
     return merged as CryptoProjectData;
   }

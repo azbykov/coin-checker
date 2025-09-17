@@ -7,10 +7,15 @@
 import { batchSiteAnalyzer } from './batchSiteAnalyzer';
 import { logger } from '../utils/logger';
 import { config } from '../config/config';
+import { browserService } from '../services/browserService';
+import { setupSignalHandlers } from '../utils/signalHandler';
 
 async function main(): Promise<void> {
   try {
     logger.info('Starting batch site analysis script');
+    
+    // Настраиваем обработчики сигналов для graceful shutdown
+    setupSignalHandlers();
     
     // Проверяем конфигурацию
     if (!config.telegram.botToken || !config.telegram.chatId) {
@@ -25,6 +30,18 @@ async function main(): Promise<void> {
   } catch (error) {
     logger.error('Failed to run batch site analysis script', error as Error);
     process.exit(1);
+  } finally {
+    // Очищаем ресурсы браузера
+    try {
+      await browserService.close();
+      logger.info('Browser service cleaned up');
+    } catch (error) {
+      logger.warn('Failed to cleanup browser service');
+    }
+    
+    // Принудительно завершаем процесс
+    logger.info('Exiting process...');
+    process.exit(0);
   }
 }
 

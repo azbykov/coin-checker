@@ -1,0 +1,93 @@
+---
+globs: src/utils/*.ts
+description: Правила для утилитарных модулей и общих функций
+---
+
+# Паттерны утилит в Crypto Checker
+
+## Общие принципы
+
+Утилитарные модули должны быть:
+- **Переиспользуемыми** - использоваться в нескольких местах проекта
+- **Чистыми функциями** - без побочных эффектов
+- **Типизированными** - с явными типами параметров и возвращаемых значений
+- **Документированными** - с JSDoc комментариями
+
+## selectorUtils.ts
+
+Централизованные утилиты для работы с селекторами и скриншотами:
+
+### Основные функции
+
+```typescript
+// Создание локатора для различных типов селекторов
+export function createLocator(page: Page, selector: string): Locator<ElementHandle>
+
+// Универсальный метод для скриншотов
+export async function takeScreenshotWithSelector(
+  page: Page, 
+  selector?: string, 
+  timeout = 10000
+): Promise<Buffer>
+
+// Настройка страницы для скриншотов
+export async function setupPageForScreenshots(page: Page): Promise<void>
+
+// Ожидание полной загрузки страницы
+export async function waitForPageLoad(page: Page): Promise<void>
+```
+
+### Поддерживаемые селекторы
+
+- **CSS селекторы**: `.class-name`, `#id-name`, `[data-testid="..."]`
+- **Текстовые селекторы**: `text=Your purchased $PEAP`
+- **XPath селекторы**: `xpath=//div[@class='example']`
+- **Комбинированные селекторы**: `text=Текст >> xpath=../../..`
+
+### Примеры использования
+
+```typescript
+import { createLocator, takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
+
+// В сервисе или скрипте
+const browser = await browserService.getBrowser();
+const page = await browser.newPage();
+
+// Настройка страницы
+await setupPageForScreenshots(page);
+
+// Переход на страницу
+await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+// Ожидание загрузки
+await waitForPageLoad(page);
+
+// Скриншот с селектором
+const screenshot = await takeScreenshotWithSelector(page, '.price-container');
+```
+
+## Другие утилиты
+
+### logger.ts
+- Структурированное логирование
+- Разные уровни: debug, info, warn, error
+- Консистентный формат сообщений
+
+### urlValidator.ts
+- Валидация URL
+- Проверка формата и доступности
+- Санитизация URL
+
+### errorHandler.ts
+- Типизированные ошибки
+- Обработка специфичных ошибок проекта
+- Контекстная информация
+
+## Принципы разработки утилит
+
+1. **Единственная ответственность** - каждая функция решает одну задачу
+2. **Переиспользование** - избегайте дублирования кода
+3. **Тестируемость** - функции должны быть легко тестируемыми
+4. **Документация** - используйте JSDoc для описания функций
+5. **Типизация** - строгие типы для всех параметров и возвращаемых значений
+6. **Обработка ошибок** - корректная обработка и логирование ошибок

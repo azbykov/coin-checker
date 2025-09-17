@@ -11,11 +11,19 @@ export interface CryptoProjectData {
   raised: string;
   url: string;
   timestamp: Date;
+  customData?: CustomDataResult[];
 }
 
 export interface ScreenshotResult {
   url: string;
   screenshot: Buffer;
+  success: boolean;
+  error?: string;
+}
+
+export interface JsonApiResult {
+  url: string;
+  data: any;
   success: boolean;
   error?: string;
 }
@@ -64,9 +72,42 @@ export interface ProcessingResult {
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+export interface JsonApiConfig {
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers?: Record<string, string>;
+  body?: any;
+  dataMapping: {
+    currentPrice?: string;
+    nextPrice?: string;
+    listingPrice?: string;
+    raised?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+export interface CustomDataConfig {
+  source: 'selector' | 'json' | 'text';
+  selector?: string; // для source: 'selector'
+  jsonApi?: JsonApiConfig; // для source: 'json'
+  text?: string; // для source: 'text'
+  label: string; // название для идентификации данных
+  url?: string; // URL для сбора данных (если не указан, используется основной URL сайта)
+}
+
+export interface CustomDataResult {
+  label: string;
+  data: string;
+  success: boolean;
+  error?: string;
+}
+
 export interface SiteConfig {
   url: string;
   selector?: string;
-  selectors?: string[]; // Массив селекторов для множественных блоков
+  selectors?: string[];
   skip?: boolean;
+  dataSource?: 'screenshot' | 'json';
+  jsonApi?: JsonApiConfig;
+  customData?: CustomDataConfig[];
 } 
