@@ -5,10 +5,13 @@
  * Без проверок ботов, только скриншоты и базовые данные
  */
 
-import puppeteer, { Browser, Page } from 'puppeteer';
+import { Page } from 'puppeteer';
 import { logger } from '../utils/logger';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { validateUrl } from '../utils/urlValidator';
+import { browserService } from '../services/browserService';
+import { takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
 
 interface ScanResult {
   url: string;
@@ -21,7 +24,6 @@ interface ScanResult {
 }
 
 class SimpleScanner {
-  private browser: Browser | null = null;
   private outputDir: string;
 
   constructor(outputDir = 'screenshots') {
@@ -38,35 +40,8 @@ class SimpleScanner {
 
   async initialize(): Promise<void> {
     try {
-      logger.info('Запускаем браузер...');
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-field-trial-config',
-          '--disable-ipc-flooding-protection',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-default-apps',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-sync',
-          '--disable-translate',
-          '--hide-scrollbars',
-          '--mute-audio',
-          '--no-zygote',
-          '--single-process',
-        ],
-        timeout: 30000,
-      });
+      logger.info('Инициализируем браузер через browserService...');
+      await browserService.initialize();
       logger.info('Браузер инициализирован');
     } catch (error) {
       logger.error('Ошибка инициализации браузера', error as Error);
@@ -79,14 +54,16 @@ class SimpleScanner {
     let page: Page | null = null;
 
     try {
-      if (!this.browser) {
-        throw new Error('Браузер не инициализирован');
+      // Валидация URL
+      if (!validateUrl(url)) {
+        throw new Error(`Некорректный URL: ${url}`);
       }
 
-      page = await this.browser.newPage();
+      const browser = await browserService.getBrowser();
+      page = await browser.newPage();
       
-      // Настройка viewport
-      await page.setViewport({ width: 1920, height: 1080 });
+      // Настройка страницы для скриншотов
+      await setupPageForScreenshots(page);
       
       // Переход на страницу
       await page.goto(url, { 
@@ -94,41 +71,12 @@ class SimpleScanner {
         timeout: 30000 
       });
       
-      // Ожидание загрузки контента
-      await new Promise((r) => setTimeout(r, 2000))
+      // Ожидание полной загрузки
+      await waitForPageLoad(page);
       
-      let screenshot: string;
-      
-      if (selector) {
-        // Ждем появления элемента
-        await page.waitForSelector(selector, { timeout: 10000 });
-        
-        // Делаем скриншот конкретного элемента
-        const element = await page.$(selector);
-        if (!element) {
-          throw new Error(`Элемент с селектором "${selector}" не найден`);
-        }
-        
-        // Проверяем, что элемент все еще видим
-        const isVisible = await element.isVisible();
-        if (!isVisible) {
-          throw new Error(`Элемент с селектором "${selector}" не видим`);
-        }
-        
-        screenshot = await element.screenshot({
-          type: 'png',
-          encoding: 'base64'
-        }) as string;
-        
-        logger.info(`Скриншот элемента "${selector}" создан`);
-      } else {
-        // Полностраничный скриншот
-        screenshot = await page.screenshot({
-          type: 'png',
-          fullPage: true,
-          encoding: 'base64'
-        }) as string;
-      }
+      // Делаем скриншот с использованием общих утилит
+      const screenshotBuffer = await takeScreenshotWithSelector(page, selector, 1000);
+      const screenshot = screenshotBuffer.toString('base64');
 
       const processingTime = Date.now() - startTime;
 
@@ -142,9 +90,7 @@ class SimpleScanner {
         const filename = `${hostname}_${timestamp}.png`;
         const filepath = join(this.outputDir, filename);
         
-        // Сохраняем base64 в файл
-        const buffer = Buffer.from(screenshot as string, 'base64');
-        writeFileSync(filepath, buffer);
+        writeFileSync(filepath, screenshotBuffer);
         
         screenshotPath = filepath;
         logger.info(`Скриншот сохранен: ${filepath}`);
@@ -153,7 +99,7 @@ class SimpleScanner {
       return {
         url,
         success: true,
-        screenshot: screenshot as string,
+        screenshot,
         ...(screenshotPath && { screenshotPath }),
         processingTime,
         timestamp: new Date().toISOString()
@@ -199,10 +145,11 @@ class SimpleScanner {
   }
 
   async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-      logger.info('Браузер закрыт');
+    try {
+      await browserService.close();
+      logger.info('Браузер закрыт через browserService');
+    } catch (error) {
+      logger.warn(`Ошибка при закрытии браузера: ${(error as Error).message}`);
     }
   }
 
@@ -240,30 +187,29 @@ async function main(): Promise<void> {
   
   if (args.includes('--help') || args.length === 0) {
     console.log(`
-🔍 Простой сканер URL
+🔍 Простой сканер URL с поддержкой Puppeteer Locator API
 
 Использование:
-  npx tsx src/scripts/simpleScanner.ts <url1> <url2> ...
-  npx tsx src/scripts/simpleScanner.ts --file <filename>
+  npm run scan <url1> <url2> ...
+  npm run scan:file <filename>
+  npm run scan:help
 
 Опции:
   --no-save              Не сохранять скриншоты в файлы
   --output-dir <path>    Папка для сохранения скриншотов (по умолчанию: screenshots)
-  --selector <css>       CSS селектор для скриншота конкретного элемента
+  --selector <selector>  Селектор для скриншота конкретного элемента
 
 Примеры:
-  npx tsx src/scripts/simpleScanner.ts https://example.com https://test.com
-  npx tsx src/scripts/simpleScanner.ts --file urls.txt
-  npx tsx src/scripts/simpleScanner.ts --no-save https://example.com
-  npx tsx src/scripts/simpleScanner.ts --output-dir my-screenshots https://example.com
-  npx tsx src/scripts/simpleScanner.ts --selector ".price-container" https://example.com
-  npx tsx src/scripts/simpleScanner.ts --selector "#token-info" --file urls.txt
+  npm run scan https://example.com https://test.com
+  npm run scan:file urls.txt
+  npm run scan -- --no-save https://example.com
+  npm run scan -- --selector ".price-container" https://example.com
 
-Селекторы:
-  .class-name          - элемент с классом
-  #id-name             - элемент с ID
-  [data-testid="..."]  - элемент с data-атрибутом
-  .parent .child       - вложенный элемент
+Поддерживаемые селекторы:
+  CSS: .class-name, #id-name, [data-testid="..."]
+  Текст: text=Текст
+  XPath: xpath=//div[@class='example']
+  Комбинированные: text=Текст >> xpath=../../..
 `);
     return;
   }

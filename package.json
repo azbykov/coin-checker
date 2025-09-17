@@ -2,18 +2,19 @@
   "name": "coin-checker",
   "version": "1.0.0",
   "description": "Крипто-проект анализатор с AI и Telegram ботом",
-  "main": "dist/main.js",
+  "main": "dist/scripts/runBatchAnalysis.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/main.js",
-    "dev": "tsx src/main.ts",
+    "start": "node dist/scripts/runBatchAnalysis.js",
+    "dev": "tsx src/scripts/runBatchAnalysis.ts",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",
     "type-check": "tsc --noEmit",
+    "analyze": "tsx src/scripts/runBatchAnalysis.ts",
     "scan": "tsx src/scripts/simpleScanner.ts",
-    "vision": "tsx src/scripts/visionScanner.ts",
-    "batch-sites": "tsx src/scripts/runBatchAnalysis.ts"
+    "scan:help": "tsx src/scripts/simpleScanner.ts --help",
+    "scan:file": "tsx src/scripts/simpleScanner.ts --file"
   },
   "keywords": [
     "crypto",
@@ -37,7 +38,7 @@
     "eslint": "^8.55.0",
     "husky": "^8.0.0",
     "prettier": "^3.1.0",
-    "tsx": "^4.6.0",
+    "tsx": "^4.20.5",
     "typescript": "^5.3.0"
   },
   "engines": {

@@ -5,7 +5,7 @@
 // Ошибки: Нет
 
 import { logger } from './logger';
-import { orchestrator } from '../services/orchestrator';
+import { browserService } from '../services/browserService';
 
 let isShuttingDown = false;
 
@@ -23,7 +23,8 @@ export function setupSignalHandlers(): void {
       logger.info(`Received ${signal}, starting graceful shutdown...`);
       
       try {
-        await orchestrator.cleanup();
+        // Очищаем ресурсы браузера
+        await browserService.close();
         logger.info('Graceful shutdown completed');
         process.exit(0);
       } catch (error) {

@@ -55,10 +55,36 @@ export const serviceName = new ServiceName(config);
 - Обработка команд и сообщений
 - Отправка уведомлений
 
-### Orchestrator
-- Координация всех сервисов
-- Управление потоком обработки
-- Сбор и агрегация результатов
+### BatchSiteAnalyzer
+- Координация анализа крипто-проектов
+- Управление потоком обработки сайтов
+- Сбор и агрегация результатов AI анализа
+
+### SimpleScanner
+- Простое сканирование URL для создания скриншотов
+- Использует общие утилиты из selectorUtils.ts
+- Интеграция с browserService.ts
+
+## Общие утилиты
+
+### selectorUtils.ts
+Централизованные утилиты для работы с селекторами:
+
+```typescript
+import { createLocator, takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
+
+// Создание локатора
+const locator = createLocator(page, selector);
+
+// Скриншот с селектором
+const screenshot = await takeScreenshotWithSelector(page, selector);
+
+// Настройка страницы
+await setupPageForScreenshots(page);
+
+// Ожидание загрузки
+await waitForPageLoad(page);
+```
 
 ## Принципы
 
@@ -67,3 +93,5 @@ export const serviceName = new ServiceName(config);
 3. **Логирование** - логируйте важные операции
 4. **Обработка ошибок** - обрабатывайте ошибки на уровне сервиса
 5. **Типизация** - используйте строгие типы из [types/index.ts](mdc:src/types/index.ts)
+6. **Переиспользование** - используйте общие утилиты вместо дублирования кода
+7. **Единообразие** - все сервисы должны использовать browserService.ts для управления браузером

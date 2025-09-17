@@ -5,7 +5,7 @@
 // Ошибки: Ошибки API, неверный формат ответа, таймауты
 
 import OpenAI from 'openai';
-import { VisionApiResponse } from '../types';
+import { VisionApiResponse, CustomDataResult } from '../types';
 import { logger } from '../utils/logger';
 import { ApiError } from '../utils/errorHandler';
 
@@ -39,9 +39,12 @@ export class VisionParser {
     return this.parseScreenshot(imageBuffer);
   }
 
-  async parseScreenshot(imageBuffer: Buffer): Promise<VisionApiResponse> {
+  async parseScreenshot(imageBuffer: Buffer, customData?: CustomDataResult[]): Promise<VisionApiResponse> {
     try {
       logger.info('Sending image to GPT-4 Vision API');
+
+      // Формируем промпт с customData
+      const prompt = this.buildPromptWithCustomData(customData);
 
       const response = await this.client.chat.completions.create({
         model: 'gpt-4o',
@@ -51,7 +54,7 @@ export class VisionParser {
             content: [
               {
                 type: 'text',
-                text: VISION_PROMPT,
+                text: prompt,
               },
               {
                 type: 'image_url',
@@ -86,6 +89,28 @@ export class VisionParser {
       logger.error('Failed to parse image with Vision API', error as Error);
       throw new ApiError(`Vision API error: ${(error as Error).message}`);
     }
+  }
+
+  private buildPromptWithCustomData(customData?: CustomDataResult[]): string {
+    let prompt = VISION_PROMPT;
+
+    console.log('customData111', customData);
+    
+    if (customData && customData.length > 0) {
+      const successfulData = customData.filter(item => item.success && item.data.trim());
+      
+      if (successfulData.length > 0) {
+        prompt += '\n\nДополнительная информация для анализа:\n';
+        
+        for (const item of successfulData) {
+          prompt += `\n${item.label}:\n${item.data}\n`;
+        }
+        
+        prompt += '\nИспользуй эту дополнительную информацию для более точного анализа данных на изображении.';
+      }
+    }
+    
+    return prompt;
   }
 
   private parseJsonResponse(content: string): VisionApiResponse {

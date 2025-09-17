@@ -9,18 +9,16 @@ description: Правила для работы с Telegram ботом и инт
 - **telegramService.ts** - основной сервис бота на Telegraf
 - **messageService.ts** - отправка сообщений и медиа
 - **screenshotTelegramService.ts** - интегрированный сервис скриншотов и Telegram
-- **telegramBot.ts** - скрипт запуска бота
+- **batchSiteAnalyzer.ts** - интеграция Telegram в анализ крипто-проектов
 
-## Команды бота
+## Использование Telegram
 
-- `/start` - приветствие и справка
-- `/help` - подробная справка
-- `/scan <url>` - анализ одного сайта
-- `/screenshot <url> [selector]` - создание скриншота
-- `/multi <url> <selector1> <selector2> ...` - множественные скриншоты
-- `/batch` - пакетный анализ всех сайтов
-- `/status` - статус бота
-- `/info` - информация о боте
+Telegram интеграция работает автоматически при запуске анализа:
+
+- **Автоматические уведомления** - результаты анализа отправляются в Telegram
+- **Скриншоты с анализом** - изображения с подписями и данными
+- **Обработка ошибок** - уведомления об ошибках анализа
+- **Статус процесса** - информация о ходе выполнения
 
 ## Отправка сообщений
 
@@ -59,13 +57,13 @@ await messageService.sendDocument(chatId, fileBuffer, 'filename.png');
 
 ## Примеры использования
 
-```typescript
-// Анализ сайта через бота
-/scan https://example-ico.com
+```bash
+# Полный анализ с AI и Telegram
+npm run analyze
 
-// Множественные скриншоты
-/multi https://example.com .header .content .footer
+# Простое сканирование
+npm run scan https://example.com
 
-// Пакетный анализ
-/batch
+# Сканирование с селектором
+npm run scan -- --selector ".price-container" https://example.com
 ```

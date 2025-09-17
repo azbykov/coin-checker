@@ -8,7 +8,7 @@ alwaysApply: true
 
 ## Основные компоненты
 
-- **Точка входа**: [main.ts](mdc:src/main.ts) - главный файл приложения
+- **Точка входа**: [runBatchAnalysis.ts](mdc:src/scripts/runBatchAnalysis.ts) - главный скрипт анализа
 - **Конфигурация**: [config.ts](mdc:src/config/config.ts) - настройки приложения
 - **Типы**: [index.ts](mdc:src/types/index.ts) - TypeScript интерфейсы и типы
 
@@ -21,10 +21,6 @@ alwaysApply: true
 - **visionParser.ts** - парсинг изображений через AI
 - **telegramService.ts** - основной сервис Telegram бота
 - **messageService.ts** - отправка сообщений в Telegram
-- **orchestrator.ts** - основной оркестратор приложения
-- **urlProcessor.ts** - обработка и валидация URL
-- **reportService.ts** - создание и форматирование отчётов
-- **storageService.ts** - сохранение данных
 
 ## Утилиты (src/utils/)
 
@@ -34,14 +30,13 @@ alwaysApply: true
 - **reportFormatter.ts** - форматирование отчётов
 - **dataValidator.ts** - валидация данных
 - **signalHandler.ts** - обработка сигналов
+- **selectorUtils.ts** - общие утилиты для работы с селекторами и скриншотами
 
 ## Скрипты (src/scripts/)
 
-- **telegramBot.ts** - Telegram бот с командами
-- **batchSiteAnalyzer.ts** - пакетный анализ сайтов
-- **visionScanner.ts** - сканер с Vision API
-- **simpleScanner.ts** - простой сканер
-- **runBatchAnalysis.ts** - запуск пакетного анализа
+- **runBatchAnalysis.ts** - точка входа для полного анализа с AI и Telegram
+- **batchSiteAnalyzer.ts** - основной движок анализа крипто-проектов
+- **simpleScanner.ts** - простой сканер для быстрых скриншотов
 
 ## Конфигурация
 

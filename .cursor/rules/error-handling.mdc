@@ -63,14 +63,15 @@ class VisionApiError extends Error {
 }
 ```
 
-## Обработка в main.ts
+## Обработка в runBatchAnalysis.ts
 
-Главный файл должен обрабатывать критические ошибки:
+Главный скрипт должен обрабатывать критические ошибки:
 
 ```typescript
 async function main(): Promise<void> {
   try {
-    // основная логика
+    // основная логика анализа
+    await batchSiteAnalyzer.run();
   } catch (error) {
     logger.error('Application failed', error as Error);
     
@@ -83,8 +84,8 @@ async function main(): Promise<void> {
     
     process.exit(1);
   } finally {
-    // Очистка ресурсов
-    await cleanup();
+    // Очистка ресурсов браузера
+    await browserService.close();
   }
 }
 ```
