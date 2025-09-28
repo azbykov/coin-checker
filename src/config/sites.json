@@ -92,7 +92,7 @@
   },
   {
     "url": "https://lightchain.ai/",
-    "selector": ".presale-box"
+    "selector": ".presale-box",
     "skip": true
   },
   {

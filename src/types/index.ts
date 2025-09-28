@@ -60,6 +60,11 @@ export interface Config {
     maxConcurrentRequests: number;
     screenshotsDir: string;
   };
+  googleSheets: {
+    spreadsheetId: string;
+    clientEmail: string;
+    privateKey: string;
+  };
 }
 
 export interface ProcessingResult {
@@ -110,4 +115,12 @@ export interface SiteConfig {
   dataSource?: 'screenshot' | 'json';
   jsonApi?: JsonApiConfig;
   customData?: CustomDataConfig[];
+}
+
+// Типы для работы с Google Sheets
+export interface GoogleSheetsConfig {
+  spreadsheetId: string;
+  clientEmail?: string;
+  privateKey?: string;
+  credentialsPath?: string; // Путь к JSON файлу с credentials
 } 
