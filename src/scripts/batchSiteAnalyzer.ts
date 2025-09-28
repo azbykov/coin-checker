@@ -14,6 +14,7 @@ import { browserService } from '../services/browserService';
 import { visionParser } from '../services/visionParser';
 import { jsonApiService } from '../services/jsonApiService';
 import { customDataService } from '../services/customDataService';
+import { GoogleSheetsService } from '../services/googleSheetsService';
 import { logger } from '../utils/logger';
 import { CryptoProjectData, SiteConfig } from '../types';
 import { takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
@@ -22,7 +23,9 @@ export class BatchSiteAnalyzer {
   private telegramService: TelegramService;
   private messageService: any;
   private screenshotTelegramService: ScreenshotTelegramService;
+  private googleSheetsService: GoogleSheetsService;
   private telegramEnabled: boolean = false;
+  private googleSheetsEnabled: boolean = false;
   private outputDir: string;
 
   constructor(outputDir?: string) {
@@ -30,6 +33,7 @@ export class BatchSiteAnalyzer {
     this.telegramService = new TelegramService(config.telegram.botToken);
     this.messageService = createMessageService(this.telegramService.getBot(), config.telegram.botToken);
     this.screenshotTelegramService = new ScreenshotTelegramService(this.telegramService.getBot(), config.telegram.botToken);
+    this.googleSheetsService = new GoogleSheetsService(config.googleSheets);
     this.ensureOutputDir();
   }
 
@@ -42,6 +46,14 @@ export class BatchSiteAnalyzer {
 
 
   private saveScreenshot(screenshot: Buffer, url: string): string {
+    // В продакшене не сохраняем скриншоты для экономии места
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      logger.debug('Сохранение скриншотов отключено (NODE_ENV=production)');
+      return '';
+    }
+    
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname.replace(/[^a-zA-Z0-9]/g, '_');
@@ -58,14 +70,32 @@ export class BatchSiteAnalyzer {
     }
   }
 
-  private loadSitesConfig(): SiteConfig[] {
+  private async loadSitesConfig(): Promise<SiteConfig[]> {
     try {
-      const configPath = path.join(__dirname, '../config/sites.json');
-      const configData = fs.readFileSync(configPath, 'utf-8');
-      return JSON.parse(configData);
+      // Пытаемся загрузить из Google Sheets
+      if (this.googleSheetsEnabled && this.googleSheetsService) {
+        logger.info('Loading sites configuration from Google Sheets...');
+        const config = await this.googleSheetsService.loadSitesConfig();
+        return config as SiteConfig[];
+      } else {
+        // Fallback к sites.json если Google Sheets недоступен
+        logger.warn('Google Sheets not available, loading from sites.json...');
+        const configPath = path.join(__dirname, '../config/sites.json');
+        const configData = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(configData);
+      }
     } catch (error) {
       logger.error('Failed to load sites configuration', error as Error);
-      throw new Error('Failed to load sites configuration');
+      // Попытка fallback к локальному файлу
+      try {
+        logger.info('Attempting fallback to sites.json...');
+        const configPath = path.join(__dirname, '../config/sites.json');
+        const configData = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(configData);
+      } catch (fallbackError) {
+        logger.error('Fallback to sites.json also failed', fallbackError as Error);
+        throw new Error('Failed to load sites configuration from both Google Sheets and local file');
+      }
     }
   }
 
@@ -94,7 +124,7 @@ export class BatchSiteAnalyzer {
         const multipleScreenshotsResult = await this.screenshotTelegramService.processMultipleScreenshots(
           siteConfig.url,
           {
-            saveToDisk: true,
+            saveToDisk: process.env.NODE_ENV !== 'production',
             savePath: this.outputDir,
             sendToTelegram: false, // Не отправляем в Telegram пока не проанализируем
             selectors: siteConfig.selectors,
@@ -467,7 +497,7 @@ ${JSON.stringify(jsonData, null, 2)}`;
       logger.info('Starting batch site analysis');
 
       // Загружаем конфигурацию сайтов
-      const sites = this.loadSitesConfig();
+      const sites = await this.loadSitesConfig();
       logger.info(`Loaded ${sites.length} sites for analysis!!`);
 
       // Запускаем Telegram бота
@@ -484,6 +514,18 @@ ${JSON.stringify(jsonData, null, 2)}`;
         logger.error('Error details:', error as Error);
         this.telegramEnabled = false;
         // Продолжаем без Telegram
+      }
+
+      // Инициализируем Google Sheets
+      logger.info('Initializing Google Sheets connection...');
+      try {
+        await this.googleSheetsService.initialize();
+        this.googleSheetsEnabled = true;
+        logger.info('Google Sheets initialized successfully');
+      } catch (error) {
+        logger.error('Failed to initialize Google Sheets, but continuing with analysis...', error as Error);
+        this.googleSheetsEnabled = false;
+        // Продолжаем без Google Sheets
       }
 
       // Анализируем каждый сайт
@@ -505,6 +547,16 @@ ${JSON.stringify(jsonData, null, 2)}`;
             console.log('\n' + '='.repeat(50));
             console.log(this.formatTelegramMessage(data, Buffer.alloc(0)));
             console.log('='.repeat(50) + '\n');
+            
+            // Сохраняем в Google Sheets если подключение активно
+            if (this.googleSheetsEnabled) {
+              try {
+                const projectId = await this.googleSheetsService.saveCryptoProject(data);
+                logger.info(`Data saved to Google Sheets for ${data.url} (ID: ${projectId})`);
+              } catch (error) {
+                logger.error(`Failed to save data to Google Sheets for ${data.url}`, error as Error);
+              }
+            }
             
             // Отправляем в Telegram если бот работает
             if (this.telegramEnabled) {
@@ -605,6 +657,16 @@ ${JSON.stringify(jsonData, null, 2)}`;
           await this.telegramService.stop();
         } catch (error) {
           logger.warn('Failed to stop Telegram bot (may not be running)');
+        }
+      }
+      
+      // Закрываем подключение к Google Sheets
+      if (this.googleSheetsEnabled && this.googleSheetsService) {
+        try {
+          await this.googleSheetsService.close();
+          logger.info('Google Sheets connection closed');
+        } catch (error) {
+          logger.warn('Failed to close Google Sheets connection');
         }
       }
       

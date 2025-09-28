@@ -93,8 +93,6 @@ export class VisionParser {
 
   private buildPromptWithCustomData(customData?: CustomDataResult[]): string {
     let prompt = VISION_PROMPT;
-
-    console.log('customData111', customData);
     
     if (customData && customData.length > 0) {
       const successfulData = customData.filter(item => item.success && item.data.trim());

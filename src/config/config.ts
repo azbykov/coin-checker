@@ -14,12 +14,25 @@ function validateConfig(): Config {
     'OPENAI_API_KEY',
     'TELEGRAM_BOT_TOKEN',
     'TELEGRAM_CHAT_ID',
+    'GOOGLE_SHEETS_SPREADSHEET_ID',
   ];
 
   for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
       throw new Error(`Missing required environment variable: ${envVar}`);
     }
+  }
+
+  // Проверяем Google Sheets credentials - либо JSON файл, либо отдельные переменные
+  const hasJsonCredentials = process.env['GOOGLE_SHEETS_CREDENTIALS_PATH'];
+  const hasIndividualCredentials = 
+    process.env['GOOGLE_SHEETS_CLIENT_EMAIL'] && 
+    process.env['GOOGLE_SHEETS_PRIVATE_KEY'];
+
+  if (!hasJsonCredentials && !hasIndividualCredentials) {
+    throw new Error(
+      'Google Sheets credentials missing. Provide either GOOGLE_SHEETS_CREDENTIALS_PATH or both GOOGLE_SHEETS_CLIENT_EMAIL and GOOGLE_SHEETS_PRIVATE_KEY'
+    );
   }
 
   return {
@@ -41,6 +54,12 @@ function validateConfig(): Config {
         10,
       ),
       screenshotsDir: process.env['SCREENSHOTS_DIR'] || 'screenshots',
+    },
+    googleSheets: {
+      spreadsheetId: process.env['GOOGLE_SHEETS_SPREADSHEET_ID']!,
+      clientEmail: process.env['GOOGLE_SHEETS_CLIENT_EMAIL'] || undefined,
+      privateKey: process.env['GOOGLE_SHEETS_PRIVATE_KEY'] || undefined,
+      credentialsPath: process.env['GOOGLE_SHEETS_CREDENTIALS_PATH'] || undefined,
     },
   };
 }
