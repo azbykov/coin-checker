@@ -57,8 +57,10 @@ function validateConfig(): Config {
     },
     googleSheets: {
       spreadsheetId: process.env['GOOGLE_SHEETS_SPREADSHEET_ID']!,
-      clientEmail: process.env['GOOGLE_SHEETS_CLIENT_EMAIL'] || undefined,
-      privateKey: process.env['GOOGLE_SHEETS_PRIVATE_KEY'] || undefined,
+      // @ts-ignore
+      clientEmail: process.env['GOOGLE_SHEETS_CLIENT_EMAIL'],
+      // @ts-ignore
+      privateKey: process.env['GOOGLE_SHEETS_PRIVATE_KEY'],
       credentialsPath: process.env['GOOGLE_SHEETS_CREDENTIALS_PATH'] || undefined,
     },
   };

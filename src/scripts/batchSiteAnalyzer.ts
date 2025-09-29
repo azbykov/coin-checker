@@ -47,7 +47,7 @@ export class BatchSiteAnalyzer {
 
   private saveScreenshot(screenshot: Buffer, url: string): string {
     // В продакшене не сохраняем скриншоты для экономии места
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = process.env['NODE_ENV'] === 'production';
     
     if (isProduction) {
       logger.debug('Сохранение скриншотов отключено (NODE_ENV=production)');
@@ -124,7 +124,7 @@ export class BatchSiteAnalyzer {
         const multipleScreenshotsResult = await this.screenshotTelegramService.processMultipleScreenshots(
           siteConfig.url,
           {
-            saveToDisk: process.env.NODE_ENV !== 'production',
+            saveToDisk: process.env['NODE_ENV'] !== 'production',
             savePath: this.outputDir,
             sendToTelegram: false, // Не отправляем в Telegram пока не проанализируем
             selectors: siteConfig.selectors,

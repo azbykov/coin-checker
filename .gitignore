@@ -104,3 +104,6 @@ build/
 # Temporary files
 tmp/
 temp/ 
+
+# Google credentials
+google-credentials.json
