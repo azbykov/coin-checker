@@ -7,7 +7,7 @@
 import { Telegraf } from 'telegraf';
 import { ScreenshotService } from './screenshotService';
 import { MessageService } from './messageService';
-import { ScreenshotResult } from '../types';
+// import { ScreenshotResult } from '../types';
 import { logger } from '../utils/logger';
 import { ApiError } from '../utils/errorHandler';
 import { sanitizeUrl } from '../utils/urlValidator';
@@ -79,7 +79,7 @@ export class ScreenshotTelegramService {
       filename,
       timeout = 30000,
       selector,
-      quality = 90,
+      quality: _quality = 90,
       format = 'png'
     } = options;
 
@@ -231,7 +231,7 @@ export class ScreenshotTelegramService {
       caption,
       timeout = 30000,
       selectors = [],
-      quality = 90,
+      quality: _quality = 90,
       format = 'png'
     } = options;
 
@@ -445,7 +445,7 @@ export class ScreenshotTelegramService {
     return `${domain}_${timestamp}.${format}`;
   }
 
-  private generateCaption(url: string, customCaption?: string, savedPath?: string): string {
+  private generateCaption(url: string, customCaption?: string, _savedPath?: string): string {
     const domain = new URL(url).hostname;
     const timestamp = new Date().toLocaleString('ru-RU');
     

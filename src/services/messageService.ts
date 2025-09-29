@@ -11,11 +11,11 @@ import { ApiError } from '../utils/errorHandler';
 
 export class MessageService {
   private bot: Telegraf;
-  private botToken: string;
+  // private _botToken: string;
 
-  constructor(bot: Telegraf, botToken: string) {
+  constructor(bot: Telegraf, _botToken: string) {
     this.bot = bot;
-    this.botToken = botToken;
+    // this._botToken = botToken;
   }
 
   async sendMessage(message: TelegramMessage): Promise<boolean> {
@@ -154,7 +154,7 @@ export class MessageService {
     try {
       logger.info(`Sending media group to chat ${chatId}`);
 
-      const mediaGroup = media.map((item, index) => {
+      const mediaGroup = media.map((item) => {
         const mediaItem: any = {
           type: item.type,
           media: { source: item.media },
