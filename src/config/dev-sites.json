@@ -1,0 +1,7 @@
+[
+      {
+        "url": "https://bitcoinhyper.com/",
+        "dataSource": "html-vision",
+        "selector": "div.widget-wrapper"
+      }
+]

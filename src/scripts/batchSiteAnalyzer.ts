@@ -16,8 +16,12 @@ import { jsonApiService } from '../services/jsonApiService';
 import { customDataService } from '../services/customDataService';
 import { GoogleSheetsService } from '../services/googleSheetsService';
 import { logger } from '../utils/logger';
-import { CryptoProjectData, SiteConfig } from '../types';
+import { CryptoProjectData, SiteConfig, SitesDataSourceConfig } from '../types';
 import { takeScreenshotWithSelector, setupPageForScreenshots, waitForPageLoad } from '../utils/selectorUtils';
+import { convertVisionResponseToCryptoProjectData } from '../utils/priceParser';
+import { formatCryptoProjectMessage, formatErrorMessage, formatCompletionMessage, formatStartMessage } from '../utils/telegramFormatter';
+import { htmlParser } from '../services/htmlParser';
+import { extractElementForVision } from '../utils/htmlVisionUtils';
 
 export class BatchSiteAnalyzer {
   private telegramService: TelegramService;
@@ -70,32 +74,106 @@ export class BatchSiteAnalyzer {
     }
   }
 
-  private async loadSitesConfig(): Promise<SiteConfig[]> {
+  private async loadSitesConfig(limit?: number, sitesConfig?: SitesDataSourceConfig): Promise<SiteConfig[]> {
     try {
-      // Пытаемся загрузить из Google Sheets
-      if (this.googleSheetsEnabled && this.googleSheetsService) {
+      let sites: SiteConfig[] = [];
+      
+      // Определяем источник конфигурации
+      const useGoogleSheets = sitesConfig?.source === 'googleSheets' || 
+        (!sitesConfig && this.googleSheetsEnabled && this.googleSheetsService);
+      const useCustomFile = sitesConfig?.source === 'file' && sitesConfig?.filePath;
+      
+      if (useGoogleSheets) {
         logger.info('Loading sites configuration from Google Sheets...');
-        const config = await this.googleSheetsService.loadSitesConfig();
-        return config as SiteConfig[];
+        const sheetsConfig = await this.googleSheetsService.loadSitesConfig();
+        sites = sheetsConfig as SiteConfig[];
+      } else if (useCustomFile && sitesConfig.filePath) {
+        // Загружаем из указанного файла
+        logger.info(`Loading sites configuration from custom file: ${sitesConfig.filePath}...`);
+        const configData = fs.readFileSync(sitesConfig.filePath, 'utf-8');
+        sites = JSON.parse(configData);
       } else {
-        // Fallback к sites.json если Google Sheets недоступен
-        logger.warn('Google Sheets not available, loading from sites.json...');
+        // Загружаем из sites.json (по умолчанию)
+        logger.info('Loading sites configuration from sites.json...');
         const configPath = path.join(__dirname, '../config/sites.json');
         const configData = fs.readFileSync(configPath, 'utf-8');
-        return JSON.parse(configData);
+        sites = JSON.parse(configData);
       }
+      
+      // Фильтруем пропущенные сайты
+      const activeSites = sites.filter(site => !site.skip);
+      const skippedCount = sites.length - activeSites.length;
+      
+      if (skippedCount > 0) {
+        logger.info(`Skipped ${skippedCount} sites with skip flag`);
+      }
+      
+      // Применяем лимит к активным сайтам если указан
+      let finalSites = activeSites;
+      if (limit && limit > 0) {
+        logger.info(`Applying limit of ${limit} sites to ${activeSites.length} active sites`);
+        finalSites = activeSites.slice(0, limit);
+      }
+      
+      logger.info(`Loaded ${finalSites.length} sites for analysis (${activeSites.length} active total)`);
+      return finalSites;
+      
     } catch (error) {
       logger.error('Failed to load sites configuration', error as Error);
-      // Попытка fallback к локальному файлу
-      try {
-        logger.info('Attempting fallback to sites.json...');
-        const configPath = path.join(__dirname, '../config/sites.json');
-        const configData = fs.readFileSync(configPath, 'utf-8');
-        return JSON.parse(configData);
-      } catch (fallbackError) {
-        logger.error('Fallback to sites.json also failed', fallbackError as Error);
-        throw new Error('Failed to load sites configuration from both Google Sheets and local file');
+      
+      // Fallback к sites.json если Google Sheets недоступен
+      if (sitesConfig?.source === 'googleSheets') {
+        logger.info('Google Sheets failed, falling back to sites.json...');
+        try {
+          const configPath = path.join(__dirname, '../config/sites.json');
+          const configData = fs.readFileSync(configPath, 'utf-8');
+          let sites = JSON.parse(configData);
+          
+          // Фильтруем пропущенные сайты
+          const activeSites = sites.filter((site: SiteConfig) => !site.skip);
+          
+          // Применяем лимит к активным сайтам если указан
+          let finalSites = activeSites;
+          if (limit && limit > 0) {
+            logger.info(`Applying limit of ${limit} sites to ${activeSites.length} active sites (fallback)`);
+            finalSites = activeSites.slice(0, limit);
+          }
+          
+          logger.info(`Fallback loaded ${finalSites.length} sites from sites.json (${activeSites.length} active total)`);
+          return finalSites;
+        } catch (fallbackError) {
+          logger.error('Fallback to sites.json also failed', fallbackError as Error);
+          throw new Error('Failed to load sites configuration from both Google Sheets and local file');
+        }
       }
+      
+      // Fallback к sites.json если кастомный файл недоступен
+      if (sitesConfig?.source === 'file') {
+        logger.info(`Custom file ${sitesConfig.filePath} failed, falling back to sites.json...`);
+        try {
+          const configPath = path.join(__dirname, '../config/sites.json');
+          const configData = fs.readFileSync(configPath, 'utf-8');
+          let sites = JSON.parse(configData);
+          
+          // Фильтруем пропущенные сайты
+          const activeSites = sites.filter((site: SiteConfig) => !site.skip);
+          
+          // Применяем лимит к активным сайтам если указан
+          let finalSites = activeSites;
+          if (limit && limit > 0) {
+            logger.info(`Applying limit of ${limit} sites to ${activeSites.length} active sites (fallback)`);
+            finalSites = activeSites.slice(0, limit);
+          }
+          
+          logger.info(`Fallback loaded ${finalSites.length} sites from sites.json (${activeSites.length} active total)`);
+          return finalSites;
+        } catch (fallbackError) {
+          logger.error('Fallback to sites.json also failed', fallbackError as Error);
+          throw new Error('Failed to load sites configuration from both custom file and fallback file');
+        }
+      }
+      
+      throw error;
     }
   }
 
@@ -114,6 +192,16 @@ export class BatchSiteAnalyzer {
       if (siteConfig.dataSource === 'json' && siteConfig.jsonApi) {
         logger.info(`Using JSON API for: ${siteConfig.url}`);
         return await this.analyzeJsonApi(siteConfig, customData);
+      }
+      
+      if (siteConfig.dataSource === 'html' && siteConfig.htmlSelectors) {
+        logger.info(`Using HTML parsing for: ${siteConfig.url}`);
+        return await this.analyzeHtml(siteConfig, customData);
+      }
+      
+      if (siteConfig.dataSource === 'html-vision' && siteConfig.selector) {
+        logger.info(`Using HTML-Vision hybrid analysis for: ${siteConfig.url}`);
+        return await this.analyzeHtmlVision(siteConfig, customData);
       }
       
       // Проверяем, есть ли множественные селекторы
@@ -188,12 +276,8 @@ export class BatchSiteAnalyzer {
           return null;
         }
 
-        const result: CryptoProjectData = {
-          ...visionData,
-          url: siteConfig.url,
-          timestamp: new Date(),
-          customData: customData,
-        };
+        // Конвертируем в CryptoProjectData с парсингом чисел
+        const result = convertVisionResponseToCryptoProjectData(visionData, siteConfig.url, customData);
 
         return result;
       } else {
@@ -218,12 +302,8 @@ export class BatchSiteAnalyzer {
           return null;
         }
 
-        const result: CryptoProjectData = {
-          ...visionData,
-          url: siteConfig.url,
-          timestamp: new Date(),
-          customData: customData,
-        };
+        // Конвертируем в CryptoProjectData с парсингом чисел
+        const result = convertVisionResponseToCryptoProjectData(visionData, siteConfig.url, customData);
 
         return result;
       }
@@ -275,6 +355,114 @@ export class BatchSiteAnalyzer {
       return finalData;
     } catch (error) {
       logger.error(`Failed to analyze JSON API for ${siteConfig.url}`, error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Анализирует сайт через HTML парсинг
+   */
+  private async analyzeHtml(siteConfig: SiteConfig, customData: any[]): Promise<CryptoProjectData | null> {
+    try {
+      if (!siteConfig.htmlSelectors) {
+        logger.error('HTML selectors configuration is missing');
+        return null;
+      }
+
+      logger.info(`Analyzing HTML for: ${siteConfig.url}`);
+
+      // Создаем новую страницу
+      const page = await browserService.newPage();
+      
+      try {
+        // Настраиваем страницу
+        await setupPageForScreenshots(page);
+        
+        // Переходим на страницу
+        await page.goto(siteConfig.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        
+        // Ждем загрузки
+        await waitForPageLoad(page);
+
+        // Парсим данные через HTML
+        const result = await htmlParser.parseCryptoProject(page, siteConfig.url, siteConfig.htmlSelectors);
+        
+        if (result) {
+          // Добавляем customData
+          result.customData = customData;
+          
+          logger.info(`Successfully analyzed HTML for ${siteConfig.url}: ${JSON.stringify(result)}`);
+          return result;
+        }
+
+        return null;
+        
+      } finally {
+        await page.close();
+      }
+
+    } catch (error) {
+      logger.error(`Failed to analyze HTML for ${siteConfig.url}`, error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Гибридный анализ: извлекаем HTML элемент и анализируем через Vision API
+   */
+  private async analyzeHtmlVision(siteConfig: SiteConfig, customData: any[]): Promise<CryptoProjectData | null> {
+    try {
+      if (!siteConfig.selector) {
+        logger.error('HTML Vision selector configuration is missing');
+        return null;
+      }
+
+      logger.info(`Analyzing HTML-Vision for: ${siteConfig.url} with selector: ${siteConfig.selector}`);
+
+      // Создаем новую страницу
+      const page = await browserService.newPage();
+      
+      try {
+        // Настраиваем страницу
+        await setupPageForScreenshots(page);
+        
+        // Переходим на страницу
+        await page.goto(siteConfig.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        
+        // Ждем загрузки
+        await waitForPageLoad(page);
+
+        // Извлекаем HTML контент элемента
+        const htmlContent = await extractElementForVision(page, siteConfig.selector);
+        
+        if (!htmlContent) {
+          logger.error(`Failed to extract HTML content for: ${siteConfig.url}`);
+          return null;
+        }
+
+        // Анализируем HTML через GPT-4
+        const aiData = await visionParser.parseHtml(htmlContent);
+        
+        if (!aiData) {
+          logger.error(`Failed to parse HTML with GPT-4 for: ${siteConfig.url}`);
+          return null;
+        }
+
+        // Конвертируем в CryptoProjectData
+        const formattedData = convertVisionResponseToCryptoProjectData(aiData, siteConfig.url);
+        
+        // Добавляем customData
+        formattedData.customData = customData;
+        
+        logger.info(`Successfully analyzed HTML-Vision for ${siteConfig.url}: ${JSON.stringify(formattedData)}`);
+        return formattedData;
+        
+      } finally {
+        await page.close();
+      }
+
+    } catch (error) {
+      logger.error(`Failed to analyze HTML-Vision for ${siteConfig.url}`, error as Error);
       return null;
     }
   }
@@ -363,10 +551,11 @@ ${JSON.stringify(jsonData, null, 2)}`;
       
       // Валидируем и форматируем данные
       const formattedData = {
-        currentPrice: this.formatPrice(aiData.currentPrice),
-        nextPrice: this.formatPrice(aiData.nextPrice),
-        listingPrice: this.formatPrice(aiData.listingPrice),
-        raised: this.formatAmount(aiData.raised),
+        currentPrice: parseFloat(this.formatPrice(aiData.currentPrice)) || 0,
+        nextPrice: this.formatPrice(aiData.nextPrice) !== 'N/A' ? parseFloat(this.formatPrice(aiData.nextPrice)) : null,
+        listingPrice: this.formatPrice(aiData.listingPrice) !== 'N/A' ? parseFloat(this.formatPrice(aiData.listingPrice)) : null,
+        raised: parseFloat(this.formatAmount(aiData.raised)) || 0,
+        currency: aiData.currency || 'USD',
         url: url,
         timestamp: new Date(),
       };
@@ -476,29 +665,21 @@ ${JSON.stringify(jsonData, null, 2)}`;
   }
 
   private formatTelegramMessage(data: CryptoProjectData, _screenshot: Buffer): string {
-    const message = `
-🔍 <b>Анализ проекта</b>
-
-🌐 <b>Сайт:</b> ${data.url}
-💰 <b>Текущая цена:</b> ${data.currentPrice}
-📈 <b>Следующая цена:</b> ${data.nextPrice}
-🏷️ <b>Цена листинга:</b> ${data.listingPrice}
-💵 <b>Собрано средств:</b> ${data.raised}
-
-⏰ <b>Время анализа:</b> ${data.timestamp.toLocaleString('ru-RU')}
-    `;
-
-    return message.trim();
+    return formatCryptoProjectMessage(data, {
+      showEmojis: true,
+      showTimestamp: true,
+      showCurrency: true,
+      compactMode: false
+    });
   }
 
 
-  async run(): Promise<void> {
+  async run(limit?: number, sitesConfig?: SitesDataSourceConfig): Promise<void> {
     try {
       logger.info('Starting batch site analysis');
 
       // Загружаем конфигурацию сайтов
-      const sites = await this.loadSitesConfig();
-      logger.info(`Loaded ${sites.length} sites for analysis!!`);
+      const sites = await this.loadSitesConfig(limit, sitesConfig);
 
       // Запускаем Telegram бота
       logger.info('Starting Telegram bot...');
@@ -528,8 +709,26 @@ ${JSON.stringify(jsonData, null, 2)}`;
         // Продолжаем без Google Sheets
       }
 
+      // Отправляем сообщение о начале анализа
+      if (this.telegramEnabled) {
+        try {
+          await this.messageService.sendText(
+            config.telegram.chatId,
+            formatStartMessage(sites.length),
+            'HTML'
+          );
+        } catch (error) {
+          logger.error('Failed to send start message to Telegram', error as Error);
+        }
+      }
+
       // Анализируем каждый сайт
       logger.info(`Starting analysis of ${sites.length} sites...`);
+      let processedCount = 0;
+      let successfulCount = 0;
+      let failedCount = 0;
+      const startTime = Date.now();
+
       for (const site of sites) {
         // Пропускаем сайты с флагом skip
         logger.info(`Processing site: ${site.url}`);
@@ -543,6 +742,8 @@ ${JSON.stringify(jsonData, null, 2)}`;
           const data = await this.analyzeSite(site);
           
           if (data) {
+            successfulCount++;
+            
             // Выводим результат в консоль
             console.log('\n' + '='.repeat(50));
             console.log(this.formatTelegramMessage(data, Buffer.alloc(0)));
@@ -555,18 +756,24 @@ ${JSON.stringify(jsonData, null, 2)}`;
                 logger.info(`Data saved to Google Sheets for ${data.url} (ID: ${projectId})`);
               } catch (error) {
                 logger.error(`Failed to save data to Google Sheets for ${data.url}`, error as Error);
+                // Сохраняем историю ошибки
+                try {
+                  await this.googleSheetsService.saveBotRunHistory(0, data.url, 'error', (error as Error).message);
+                } catch (historyError) {
+                  logger.error(`Failed to save bot run history for ${data.url}`, historyError as Error);
+                }
               }
             }
             
             // Отправляем в Telegram если бот работает
             if (this.telegramEnabled) {
               try {
-                // Проверяем источник данных - для JSON API не отправляем скриншоты
-                if (site.dataSource === 'json') {
-                  // Для JSON API отправляем только текстовый отчет
+                // Проверяем источник данных - для JSON API, HTML и HTML-Vision не отправляем скриншоты
+                if (site.dataSource === 'json' || site.dataSource === 'html' || site.dataSource === 'html-vision') {
+                  // Для JSON API, HTML и HTML-Vision отправляем только текстовый отчет
                   const message = this.formatTelegramMessage(data, Buffer.alloc(0));
                   await this.messageService.sendReport(config.telegram.chatId, message);
-                  logger.info(`Successfully sent JSON report to Telegram for ${data.url}`);
+                  logger.info(`Successfully sent ${site.dataSource} report to Telegram for ${data.url}`);
                 } else {
                   // Для скриншотов создаем и отправляем изображение
                   const screenshotResult = await this.takeScreenshotWithSelector(site.url, site.selector);
@@ -614,9 +821,10 @@ ${JSON.stringify(jsonData, null, 2)}`;
             // Отправляем в Telegram если бот работает
             if (this.telegramEnabled) {
               try {
-                await this.messageService.sendError(
+                await this.messageService.sendText(
                   config.telegram.chatId,
-                  `Не удалось проанализировать сайт: ${site.url}`
+                  formatErrorMessage(site.url, 'Не удалось проанализировать сайт'),
+                  'HTML'
                 );
               } catch (telegramError) {
                 logger.error(`Failed to send error to Telegram: ${site.url}`, telegramError as Error);
@@ -624,19 +832,34 @@ ${JSON.stringify(jsonData, null, 2)}`;
             }
           }
 
+          processedCount++;
+
           // Пауза между запросами
           await new Promise(resolve => setTimeout(resolve, 2000));
 
         } catch (error) {
+          failedCount++;
+          processedCount++;
+          
           logger.error(`Error processing site ${site.url}`, error as Error);
           console.log(`❌ Ошибка при обработке сайта ${site.url}: ${(error as Error).message}`);
+          
+          // Сохраняем историю ошибки в Google Sheets
+          if (this.googleSheetsEnabled) {
+            try {
+              await this.googleSheetsService.saveBotRunHistory(0, site.url, 'error', (error as Error).message);
+            } catch (historyError) {
+              logger.error(`Failed to save bot run history for ${site.url}`, historyError as Error);
+            }
+          }
           
           // Отправляем в Telegram если бот работает
           if (this.telegramEnabled) {
             try {
-              await this.messageService.sendError(
+              await this.messageService.sendText(
                 config.telegram.chatId,
-                `Ошибка при обработке сайта ${site.url}: ${(error as Error).message}`
+                formatErrorMessage(site.url, (error as Error).message),
+                'HTML'
               );
             } catch (telegramError) {
               logger.error(`Failed to send error to Telegram: ${site.url}`, telegramError as Error);
@@ -645,7 +868,21 @@ ${JSON.stringify(jsonData, null, 2)}`;
         }
       }
 
-      logger.info('Batch site analysis completed');
+      // Отправляем сообщение о завершении анализа
+      if (this.telegramEnabled) {
+        try {
+          const processingTime = Date.now() - startTime;
+          await this.messageService.sendText(
+            config.telegram.chatId,
+            formatCompletionMessage(sites.length, successfulCount, failedCount, processingTime),
+            'HTML'
+          );
+        } catch (error) {
+          logger.error('Failed to send completion message to Telegram', error as Error);
+        }
+      }
+
+      logger.info(`Batch site analysis completed. Successful: ${successfulCount}, Failed: ${failedCount}`);
 
     } catch (error) {
       logger.error('Failed to run batch site analysis', error as Error);
@@ -691,7 +928,8 @@ ${JSON.stringify(jsonData, null, 2)}`;
       currentPrice: 'N/A',
       nextPrice: 'N/A', 
       listingPrice: 'N/A',
-      raised: 'N/A'
+      raised: 'N/A',
+      currency: 'USD'
     };
 
     // Проходим по всем данным и выбираем лучшие значения
@@ -722,13 +960,20 @@ ${JSON.stringify(jsonData, null, 2)}`;
           merged.raised = data.raised;
         }
       }
+
+      // Обновляем валюту если найдена
+      if (data.currency && data.currency !== 'USD') {
+        merged.currency = data.currency;
+      }
     }
 
     // Добавляем customData
     merged.customData = customData;
     
     logger.info(`Merged ${visionDataArray.length} vision data sets into: ${JSON.stringify(merged)}`);
-    return merged as CryptoProjectData;
+    
+    // Конвертируем в CryptoProjectData с парсингом чисел
+    return convertVisionResponseToCryptoProjectData(merged, url, customData);
   }
 }
 

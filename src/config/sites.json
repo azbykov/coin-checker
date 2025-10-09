@@ -5,6 +5,7 @@
   },
   {
     "url": "https://pepeascension.com/",
+    "dataSource": "html-vision",
     "selector": "xpath=//p[contains(text(), 'Your purchased')]/../.."
   },
   {

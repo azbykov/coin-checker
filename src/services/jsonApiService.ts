@@ -53,10 +53,11 @@ export class JsonApiService {
   ): CryptoProjectData | null {
     try {
       const result: CryptoProjectData = {
-        currentPrice: '',
-        nextPrice: '',
-        listingPrice: '',
-        raised: '',
+        currentPrice: 0,
+        nextPrice: null,
+        listingPrice: null,
+        raised: 0,
+        currency: 'USD',
         url,
         timestamp: new Date(),
       };
@@ -66,7 +67,22 @@ export class JsonApiService {
         if (path && key in result) {
           const value = this.getNestedValue(jsonData, path);
           if (value !== undefined) {
-            (result as any)[key] = String(value);
+            if (key === 'currency') {
+              (result as any)[key] = String(value);
+            } else {
+              // Парсим числовые значения
+              const numValue = parseFloat(String(value));
+              if (!isNaN(numValue)) {
+                (result as any)[key] = numValue;
+              } else {
+                // Если не удалось распарсить, оставляем null для опциональных полей
+                if (key === 'nextPrice' || key === 'listingPrice') {
+                  (result as any)[key] = null;
+                } else {
+                  (result as any)[key] = 0;
+                }
+              }
+            }
           }
         }
       }
