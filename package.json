@@ -15,6 +15,7 @@
     "scan": "tsx src/scripts/simpleScanner.ts",
     "scan:help": "tsx src/scripts/simpleScanner.ts --help",
     "scan:file": "tsx src/scripts/simpleScanner.ts --file",
+    "extract:html": "tsx src/scripts/htmlExtractorCli.ts",
     "migrate:sites": "tsx src/scripts/migrateSitesToSheets.ts"
   },
   "keywords": [

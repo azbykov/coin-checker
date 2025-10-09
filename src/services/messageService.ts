@@ -58,6 +58,16 @@ export class MessageService {
     return this.sendMessage(message);
   }
 
+  async sendText(chatId: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
+    const message: TelegramMessage = {
+      chatId,
+      text,
+      parseMode,
+    };
+
+    return this.sendMessage(message);
+  }
+
   async sendError(chatId: string, error: string): Promise<boolean> {
     const message: TelegramMessage = {
       chatId,

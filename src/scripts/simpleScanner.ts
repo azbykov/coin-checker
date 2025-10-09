@@ -259,10 +259,34 @@ async function main(): Promise<void> {
         
         const fs = require('fs');
         const fileContent = fs.readFileSync(filename, 'utf8');
-        urls = fileContent
-          .split('\n')
-          .map((line: string) => line.trim())
-          .filter((line: string) => line && !line.startsWith('#'));
+        
+        // Проверяем, является ли файл JSON
+        if (filename.endsWith('.json')) {
+          try {
+            const jsonData = JSON.parse(fileContent);
+            if (Array.isArray(jsonData)) {
+              // Если это массив объектов с URL
+              urls = jsonData.map((item: any) => {
+                if (typeof item === 'string') {
+                  return item;
+                } else if (item && typeof item === 'object' && item.url) {
+                  return item.url;
+                }
+                return null;
+              }).filter((url: string | null) => url !== null);
+            } else {
+              throw new Error('JSON файл должен содержать массив');
+            }
+          } catch (error) {
+            throw new Error(`Ошибка парсинга JSON файла: ${(error as Error).message}`);
+          }
+        } else {
+          // Обрабатываем как текстовый файл
+          urls = fileContent
+            .split('\n')
+            .map((line: string) => line.trim())
+            .filter((line: string) => line && !line.startsWith('#'));
+        }
       } else {
         urls = filteredArgs;
       }

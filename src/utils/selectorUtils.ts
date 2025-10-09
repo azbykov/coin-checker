@@ -128,3 +128,60 @@ export async function waitForPageLoad(page: Page): Promise<void> {
     logger.warn('Страница не полностью загружена, продолжаем...');
   }
 }
+
+/**
+ * Получает HTML содержимое элемента по селектору
+ */
+export async function getHtmlBySelector(page: Page, selector: string): Promise<string | null> {
+  try {
+    // Ждем появления элемента
+    await page.waitForSelector(selector, { timeout: 5000 });
+    
+    // Получаем HTML содержимое
+    const html = await page.$eval(selector, (el) => el.innerHTML);
+    
+    logger.debug(`HTML content retrieved for selector: ${selector}`);
+    return html;
+  } catch (error) {
+    logger.error(`Failed to get HTML for selector: ${selector}`, error as Error);
+    return null;
+  }
+}
+
+/**
+ * Получает текстовое содержимое элемента по селектору
+ */
+export async function getTextBySelector(page: Page, selector: string): Promise<string | null> {
+  try {
+    // Ждем появления элемента
+    await page.waitForSelector(selector, { timeout: 5000 });
+    
+    // Получаем текстовое содержимое
+    const text = await page.$eval(selector, (el) => el.textContent);
+    
+    logger.debug(`Text content retrieved for selector: ${selector}`);
+    return text;
+  } catch (error) {
+    logger.error(`Failed to get text for selector: ${selector}`, error as Error);
+    return null;
+  }
+}
+
+/**
+ * Получает атрибут элемента по селектору
+ */
+export async function getAttributeBySelector(page: Page, selector: string, attribute: string): Promise<string | null> {
+  try {
+    // Ждем появления элемента
+    await page.waitForSelector(selector, { timeout: 5000 });
+    
+    // Получаем значение атрибута
+    const value = await page.$eval(selector, (el, attr) => el.getAttribute(attr), attribute);
+    
+    logger.debug(`Attribute '${attribute}' retrieved for selector: ${selector}`);
+    return value;
+  } catch (error) {
+    logger.error(`Failed to get attribute '${attribute}' for selector: ${selector}`, error as Error);
+    return null;
+  }
+}

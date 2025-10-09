@@ -5,10 +5,11 @@
 // Ошибки: Нет
 
 export interface CryptoProjectData {
-  currentPrice: string;
-  nextPrice: string;
-  listingPrice: string;
-  raised: string;
+  currentPrice: number;
+  nextPrice: number | null;
+  listingPrice: number | null;
+  raised: number;
+  currency: string;
   url: string;
   timestamp: Date;
   customData?: CustomDataResult[];
@@ -33,6 +34,7 @@ export interface VisionApiResponse {
   nextPrice: string;
   listingPrice: string;
   raised: string;
+  currency: string;
 }
 
 export interface TelegramMessage {
@@ -87,6 +89,7 @@ export interface JsonApiConfig {
     nextPrice?: string;
     listingPrice?: string;
     raised?: string;
+    currency?: string;
     [key: string]: string | undefined;
   };
 }
@@ -112,9 +115,24 @@ export interface SiteConfig {
   selector?: string;
   selectors?: string[];
   skip?: boolean;
-  dataSource?: 'screenshot' | 'json';
+  dataSource?: 'screenshot' | 'json' | 'html' | 'html-vision';
   jsonApi?: JsonApiConfig;
   customData?: CustomDataConfig[];
+  htmlSelectors?: HtmlSelectorsConfig;
+}
+
+export interface HtmlSelectorsConfig {
+  currentPrice?: string;
+  nextPrice?: string;
+  listingPrice?: string;
+  raised?: string;
+  currency?: string;
+}
+
+// Тип для конфигурации источника данных сайтов
+export interface SitesDataSourceConfig {
+  source: 'sites.json' | 'googleSheets' | 'file';
+  filePath?: string; // Путь к файлу, если source === 'file'
 }
 
 // Типы для работы с Google Sheets

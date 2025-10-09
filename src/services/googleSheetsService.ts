@@ -111,6 +111,11 @@ export class GoogleSheetsService {
         await this.createSitesConfigSheet();
       }
 
+      // Создаем лист для истории запусков бота если не существует
+      if (!existingSheets.includes('BotRunHistory')) {
+        await this.createBotRunHistorySheet();
+      }
+
       logger.info('Google Sheets structure verified');
     } catch (error) {
       logger.error('Failed to ensure sheets exist', error as Error);
@@ -128,8 +133,7 @@ export class GoogleSheetsService {
 
     const headers = [
       'ID', 'URL', 'Current Price', 'Next Price', 'Listing Price', 
-      'Raised', 'Custom Data', 'Created At', 'Updated At', 
-      'Manual Overrides', 'Last Manager Edit', 'Last Bot Run'
+      'Raised', 'Currency', 'Created At', 'Updated At'
     ];
 
     await this.sheets.spreadsheets.batchUpdate({
@@ -154,7 +158,7 @@ export class GoogleSheetsService {
       // Добавляем заголовки
       await this.sheets.spreadsheets.values.update({
         spreadsheetId: this.config.spreadsheetId,
-        range: 'CryptoProjects!A1:L1',
+        range: 'CryptoProjects!A1:I1',
       valueInputOption: 'RAW',
       requestBody: {
         values: [headers],
@@ -298,6 +302,118 @@ export class GoogleSheetsService {
   }
 
   /**
+   * Создание листа для истории запусков бота
+   */
+  private async createBotRunHistorySheet(): Promise<void> {
+    if (!this.sheets) {
+      throw new Error('Google Sheets client not initialized');
+    }
+
+    const headers = [
+      'ID', 'Project ID', 'URL', 'Run Timestamp', 'Status', 'Error Message'
+    ];
+
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: this.config.spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: 'BotRunHistory',
+                gridProperties: {
+                  rowCount: 1000,
+                  columnCount: headers.length,
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    // Добавляем заголовки
+    await this.sheets.spreadsheets.values.update({
+      spreadsheetId: this.config.spreadsheetId,
+      range: 'BotRunHistory!A1:F1',
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [headers],
+      },
+    });
+
+    logger.info('Created BotRunHistory sheet with headers');
+  }
+
+  /**
+   * Сохранение записи о запуске бота
+   */
+  async saveBotRunHistory(projectId: number, url: string, status: 'success' | 'error', errorMessage?: string): Promise<void> {
+    if (!this.sheets) {
+      throw new Error('Google Sheets client not initialized');
+    }
+
+    try {
+      // Получаем следующий ID для истории
+      const nextId = await this.getNextBotRunHistoryId();
+
+      const values = [
+        [
+          nextId,                                    // A - ID
+          projectId,                                 // B - Project ID
+          url,                                       // C - URL
+          new Date().toISOString(),                  // D - Run Timestamp
+          status,                                    // E - Status
+          errorMessage || ''                         // F - Error Message
+        ]
+      ];
+
+      await this.sheets.spreadsheets.values.append({
+        spreadsheetId: this.config.spreadsheetId,
+        range: 'BotRunHistory!A:F',
+        valueInputOption: 'RAW',
+        requestBody: { values },
+      });
+
+      logger.info(`Bot run history saved for project ${projectId}: ${status}`);
+    } catch (error) {
+      logger.error(`Failed to save bot run history for project ${projectId}`, error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Получение следующего ID для истории запусков бота
+   */
+  private async getNextBotRunHistoryId(): Promise<number> {
+    if (!this.sheets) {
+      throw new Error('Google Sheets client not initialized');
+    }
+
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.config.spreadsheetId,
+        range: 'BotRunHistory!A:A',
+      });
+
+      const rows = response.data.values || [];
+      let maxId = 0;
+
+      for (let i = 1; i < rows.length; i++) { // Пропускаем заголовок
+        const id = parseInt(rows[i]?.[0] || '0');
+        if (id > maxId) {
+          maxId = id;
+        }
+      }
+
+      return maxId + 1;
+    } catch (error) {
+      logger.error('Failed to get next bot run history ID', error as Error);
+      return 1; // Возвращаем 1 если не удалось получить ID
+    }
+  }
+
+  /**
    * Сохранение данных крипто-проекта с учетом ручных правок менеджера
    */
   async saveCryptoProject(data: CryptoProjectData): Promise<number> {
@@ -306,7 +422,6 @@ export class GoogleSheetsService {
     }
 
     try {
-      const customDataJson = data.customData ? JSON.stringify(data.customData) : '';
       const timestamp = new Date().toISOString();
 
       // Получаем существующие данные для сравнения
@@ -322,17 +437,14 @@ export class GoogleSheetsService {
         await this.updateProjectWithOverrides(
           existingProject.rowIndex, 
           mergedData, 
-          customDataJson, 
-          timestamp,
-          existingProject.manualOverrides,
-          existingProject.lastManagerEdit
+          timestamp
         );
 
         // Сохраняем историю только если данные действительно изменились
         await this.savePriceHistory(projectId, mergedData, existingProject.data);
       } else {
         // Создаем новый проект
-        projectId = await this.createNewProject(data, customDataJson, timestamp);
+        projectId = await this.createNewProject(data, timestamp);
         
         // Сохраняем первую запись в историю
         await this.savePriceHistory(projectId, data, null);
@@ -343,6 +455,9 @@ export class GoogleSheetsService {
         await this.saveCustomData(projectId, data.customData);
       }
 
+      // Сохраняем историю запуска бота
+      await this.saveBotRunHistory(projectId, data.url, 'success');
+
       logger.info(`Crypto project saved successfully: ${data.url} (ID: ${projectId})`);
       return projectId;
     } catch (error) {
@@ -352,14 +467,12 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Получение проекта по URL с информацией о ручных правках
+   * Получение проекта по URL
    */
   private async getProjectByUrl(url: string): Promise<{ 
     id: number; 
     rowIndex: number; 
     data: CryptoProjectData;
-    manualOverrides?: any;
-    lastManagerEdit?: string;
   } | null> {
     if (!this.sheets) {
       throw new Error('Google Sheets client not initialized');
@@ -368,7 +481,7 @@ export class GoogleSheetsService {
     try {
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.config.spreadsheetId,
-        range: 'CryptoProjects!A:L', // Расширили до колонки L
+        range: 'CryptoProjects!A:I', // Обновленная структура - 9 колонок
       });
 
       const rows = response.data.values || [];
@@ -376,27 +489,18 @@ export class GoogleSheetsService {
       for (let i = 1; i < rows.length; i++) { // Пропускаем заголовок
         const row = rows[i];
         if (row && row[1] === url) { // URL в колонке B (индекс 1)
-          let manualOverrides = null;
-          try {
-            manualOverrides = row[9] ? JSON.parse(row[9]) : null; // Manual Overrides в колонке J (индекс 9)
-          } catch (error) {
-            logger.warn(`Failed to parse manual overrides for ${url}: ${row[9]}`);
-          }
-
           return {
             id: parseInt(row[0] || '0'),
             rowIndex: i + 1, // +1 для правильной индексации в Google Sheets
             data: {
               url: row[1] || '',
-              currentPrice: row[2] || '',
-              nextPrice: row[3] || '',
-              listingPrice: row[4] || '',
-              raised: row[5] || '',
+              currentPrice: parseFloat(row[2] || '0'),
+              nextPrice: row[3] ? parseFloat(row[3]) : null,
+              listingPrice: row[4] ? parseFloat(row[4]) : null,
+              raised: parseFloat(row[5] || '0'),
+              currency: row[6] || 'USD',
               timestamp: new Date(row[7] || Date.now()),
-              customData: row[6] ? JSON.parse(row[6]) : undefined,
-            },
-            manualOverrides,
-            lastManagerEdit: row[10] || undefined // Last Manager Edit в колонке K (индекс 10)
+            }
           };
         }
       }
@@ -409,49 +513,23 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Умное слияние данных с приоритетом ручных правок менеджера
+   * Слияние данных (упрощенная версия без ручных правок)
    */
   private mergeWithManagerOverrides(
     newData: CryptoProjectData, 
-    existingProject: { data: CryptoProjectData; manualOverrides?: any }
+    _existingProject: { data: CryptoProjectData }
   ): CryptoProjectData {
-    const merged = { ...newData };
-    const overrides = existingProject.manualOverrides || {};
-
-    // Проверяем каждое поле на наличие ручных правок
-    const fields = ['currentPrice', 'nextPrice', 'listingPrice', 'raised'];
-    
-    for (const field of fields) {
-      if (overrides[field]) {
-        // Если менеджер задал значение вручную
-        const manualValue = existingProject.data[field as keyof CryptoProjectData] as string;
-        
-        // Если из источника пришли данные (не N/A), обновляем
-        const newValue = newData[field as keyof CryptoProjectData];
-        if (typeof newValue === 'string' && newValue && newValue !== 'N/A' && newValue !== '') {
-          (merged as any)[field] = newValue;
-          logger.info(`Updated ${field} from source: ${manualValue} -> ${newValue} for ${newData.url}`);
-        } else {
-          // Если из источника данные не пришли, оставляем ручное значение
-          (merged as any)[field] = manualValue;
-          logger.debug(`Keeping manual override for ${field}: ${manualValue} for ${newData.url}`);
-        }
-      }
-    }
-
-    return merged;
+    // Просто возвращаем новые данные, так как убрали ручные правки
+    return { ...newData };
   }
 
   /**
-   * Обновление существующего проекта с учетом ручных правок
+   * Обновление существующего проекта
    */
   private async updateProjectWithOverrides(
     rowIndex: number, 
     data: CryptoProjectData, 
-    customDataJson: string, 
-    timestamp: string,
-    existingOverrides?: any,
-    lastManagerEdit?: string
+    timestamp: string
   ): Promise<void> {
     if (!this.sheets) {
       throw new Error('Google Sheets client not initialized');
@@ -459,23 +537,20 @@ export class GoogleSheetsService {
 
     const values = [
       [
-        data.url,                                                    // B
-        data.currentPrice,                                           // C
-        data.nextPrice,                                              // D
-        data.listingPrice,                                           // E
-        data.raised,                                                 // F
-        customDataJson,                                              // G
-        '', // Created At остается прежним                          // H
-        timestamp, // Updated At                                     // I
-        existingOverrides ? JSON.stringify(existingOverrides) : '', // J - Manual Overrides
-        lastManagerEdit || '',                                       // K - Last Manager Edit
-        timestamp // Last Bot Run                                    // L
+        data.url,                    // B
+        data.currentPrice,           // C
+        data.nextPrice,              // D
+        data.listingPrice,           // E
+        data.raised,                 // F
+        data.currency,               // G
+        '', // Created At остается прежним // H
+        timestamp, // Updated At     // I
       ]
     ];
 
     await this.sheets.spreadsheets.values.update({
       spreadsheetId: this.config.spreadsheetId,
-      range: `CryptoProjects!B${rowIndex}:L${rowIndex}`, // Обновляем B-L (11 колонок)
+      range: `CryptoProjects!B${rowIndex}:I${rowIndex}`, // Обновляем B-I (8 колонок)
       valueInputOption: 'RAW',
       requestBody: { values },
     });
@@ -485,7 +560,7 @@ export class GoogleSheetsService {
   /**
    * Создание нового проекта
    */
-  private async createNewProject(data: CryptoProjectData, customDataJson: string, timestamp: string): Promise<number> {
+  private async createNewProject(data: CryptoProjectData, timestamp: string): Promise<number> {
     if (!this.sheets) {
       throw new Error('Google Sheets client not initialized');
     }
@@ -501,18 +576,15 @@ export class GoogleSheetsService {
         data.nextPrice,          // D - Next Price
         data.listingPrice,       // E - Listing Price
         data.raised,             // F - Raised
-        customDataJson,          // G - Custom Data
+        data.currency,           // G - Currency
         timestamp,               // H - Created At
-        timestamp,               // I - Updated At
-        '',                      // J - Manual Overrides (пустое для нового проекта)
-        '',                      // K - Last Manager Edit (пустое для нового проекта)
-        timestamp                // L - Last Bot Run
+        timestamp                // I - Updated At
       ]
     ];
 
     await this.sheets.spreadsheets.values.append({
       spreadsheetId: this.config.spreadsheetId,
-      range: 'CryptoProjects!A:L', // Колонки A-L (12 колонок)
+      range: 'CryptoProjects!A:I', // Колонки A-I (9 колонок)
       valueInputOption: 'RAW',
       requestBody: { values },
     });
@@ -993,7 +1065,7 @@ export class GoogleSheetsService {
     try {
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.config.spreadsheetId,
-        range: 'CryptoProjects!A:L',
+        range: 'CryptoProjects!A:I',
       });
 
       const rows = response.data.values || [];

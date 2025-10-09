@@ -11,12 +11,13 @@ import { ApiError } from '../utils/errorHandler';
 
 const VISION_PROMPT = `Ты - помощник для анализа веб-страниц криптовалютных проектов. 
 
-Твоя задача - найти на изображении следующие данные и вернуть их в формате JSON:
+Твоя задача - проанализировать HTML контент и извлечь следующие данные, вернув их в формате JSON:
 
 1. currentPrice - текущая цена токена
 2. nextPrice - следующая цена токена (если есть)
 3. listingPrice - цена токена при листинге (если есть)  
 4. raised - сколько средств собрано
+5. currency - валюта (USD, USDT, ETH, BTC и т.д.)
 
 Верни JSON объект с этими полями. Если какое-то значение не найдено, используй "N/A".
 
@@ -25,7 +26,8 @@ const VISION_PROMPT = `Ты - помощник для анализа веб-ст
   "currentPrice": "$0.015",
   "nextPrice": "$0.020",
   "listingPrice": "$0.010", 
-  "raised": "$2,000,000"
+  "raised": "$2,000,000",
+  "currency": "USD"
 }`;
 
 export class VisionParser {
@@ -37,6 +39,52 @@ export class VisionParser {
 
   async parseImage(imageBuffer: Buffer): Promise<VisionApiResponse> {
     return this.parseScreenshot(imageBuffer);
+  }
+
+  async parseHtml(htmlContent: string, customData?: CustomDataResult[]): Promise<VisionApiResponse> {
+    try {
+      logger.info('Sending HTML content to GPT-4 for analysis');
+
+      // Формируем промпт с customData
+      const prompt = this.buildPromptWithCustomData(customData);
+
+      const response = await this.client.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `${prompt}\n\nHTML контент для анализа:\n${htmlContent}`,
+              },
+            ],
+          },
+        ],
+        max_tokens: 500,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new ApiError('Empty response from GPT-4 API');
+      }
+
+      logger.info(`Raw response from GPT-4 API: ${content}`);
+
+      // Парсинг JSON ответа
+      const parsedResponse = this.parseJsonResponse(content);
+      
+      logger.info('Successfully parsed HTML with GPT-4 API');
+      
+      return parsedResponse;
+      
+    } catch (error) {
+      logger.error('Failed to parse HTML with GPT-4 API', error as Error);
+      throw new ApiError(`GPT-4 API error: ${(error as Error).message}`);
+    }
   }
 
   async parseScreenshot(imageBuffer: Buffer, customData?: CustomDataResult[]): Promise<VisionApiResponse> {
@@ -126,6 +174,7 @@ export class VisionParser {
         nextPrice: parsed.nextPrice || 'N/A',
         listingPrice: parsed.listingPrice || 'N/A',
         raised: parsed.raised,
+        currency: parsed.currency || 'USD', // По умолчанию USD
       };
     } catch (error) {
       logger.error('Failed to parse JSON response', error as Error);
